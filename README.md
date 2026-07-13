@@ -4,17 +4,19 @@
 
 # Nib
 
-**Nib** is an independent, open-source macOS driver for the **Cintiq Pro 24 Touch
-(model DTH2420)** pen display. It was built from scratch — via clean-room reverse
-engineering — because Wacom's drivers frequently break on new macOS releases. This one
-was created specifically because the Wacom drivers **do not work on the macOS 27
-developer beta**, leaving the tablet unusable. No dependency on OpenTabletDriver or any
+**Nib** is an independent, open-source macOS driver for **Wacom pen displays**, built from
+scratch — via clean-room reverse engineering — because Wacom's drivers frequently break on
+new macOS releases. This one was created specifically because the Wacom drivers **do not
+work on the macOS 27 developer beta**, leaving the tablet unusable. Its reference device is
+the **Cintiq Pro 24 Touch (model DTH2420)** — the model it is built on and verified with —
+but all model-specific details live in swappable **device profiles**, so other Wacom
+tablets can be added as data, not new decode code. No dependency on OpenTabletDriver or any
 vendor software at runtime.
 
-**Working today:** pen (position with in-app calibration, an adjustable pressure curve,
-tilt, remappable side buttons), multi-touch (2-finger scroll, tap-to-click, 3-finger
-swipe, palm rejection), a menu-bar app and a full preferences window, running as a
-persistent per-user LaunchAgent.
+**Working today:** automatic detection of the connected tablet with hotplug re-resolution;
+pen (position with in-app calibration, an adjustable pressure curve, tilt, remappable side
+buttons), multi-touch (2-finger scroll, tap-to-click, 3-finger swipe, palm rejection), a
+menu-bar app and a full preferences window, running as a persistent per-user LaunchAgent.
 
 ## Screenshots
 
@@ -28,6 +30,13 @@ In-app calibration overlay — tap the two crosshairs with the pen:
 
 <img src="docs/screenshots/calibration.jpg" alt="Calibration overlay" width="640">
 
+## Supported devices
+- **Wacom Cintiq Pro 24 Touch (DTH2420)** — the reference device, fully verified.
+
+Nib resolves the connected tablet at runtime from a set of device profiles and re-resolves
+on hotplug. Other Wacom models can be added from a capture bundle **without shipping
+hardware** — see `docs/ADDING-A-DEVICE.md`.
+
 ## Layout
 - `driver/` — the Swift package (`nib` executable + `NibCore` library). See
   `driver/README.md` (usage) and `driver/INSTALL.md` (persistent install + code signing).
@@ -40,9 +49,11 @@ In-app calibration overlay — tap the two crosshairs with the pen:
 - `ROADMAP.md` — planned work and stretch ideas.
 
 ## How it works
-1. `IOHIDManager` opens the pen (`056a:0351`) and touch (`056a:0355`) HID interfaces.
-2. On attach it sends the enable/mode-switch reports needed to put the tablet into its
-   native high-resolution mode (recovered during reverse engineering).
+1. On launch (and on hotplug) Nib detects the connected tablet from its **device profiles**
+   and opens that model's pen and touch HID interfaces via `IOHIDManager` (the DTH2420's
+   are `056a:0351` / `056a:0355`).
+2. On attach it sends the active profile's enable/mode-switch reports to put the tablet
+   into its native high-resolution mode (recovered during reverse engineering).
 3. Reports are decoded by pure-Swift parsers (unit-tested against real captured reports).
 4. Input is injected via CoreGraphics tablet events (pen) and scroll/key events (touch) —
    an entirely userspace path, no kernel extension.
