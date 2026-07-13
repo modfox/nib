@@ -6,13 +6,24 @@ import CoreGraphics
 /// This mirrors the injection path the stock Wacom driver uses (observed as
 /// NXTabletPointData / kCGEventTabletProximity in the binary). Posting these events
 /// requires the process to be granted Accessibility / Input-Monitoring permission.
+/// What a pen side button does. Remappable (exposed later via settings).
+public enum PenButtonAction: String, Codable, Sendable {
+    case none, rightClick, middleClick, leftClick
+}
+
 public final class EventEmitter {
     private var mapping: DisplayMapping
     private var wasInProximity = false
     private var wasTipDown = false
+    private var wasBarrel = false
+    private var wasSecondary = false
     private let deviceID: UInt16
     private let vendorID: UInt16 = 0x056a
     private let pressureMax = Double(PenSample.pressureLogicalMax)
+
+    /// Verified: lower side button = `barrelButton`, upper = `secondaryBarrel`.
+    public var lowerBarrelAction: PenButtonAction = .rightClick
+    public var upperBarrelAction: PenButtonAction = .middleClick
 
     public init(mapping: DisplayMapping, deviceID: UInt16 = 1) {
         self.mapping = mapping
@@ -30,13 +41,46 @@ public final class EventEmitter {
 
         if s.inRange {
             postPointer(s)
+            handleButtons(s)
         }
 
         if !s.inRange && wasInProximity {
+            // Release any held side buttons before leaving proximity.
+            let pt = mapping.point(x: s.x, y: s.y)
+            if wasBarrel { postButton(lowerBarrelAction, down: false, at: pt); wasBarrel = false }
+            if wasSecondary { postButton(upperBarrelAction, down: false, at: pt); wasSecondary = false }
             postProximity(entering: false, sample: s)
             wasInProximity = false
             wasTipDown = false
         }
+    }
+
+    // MARK: - Side buttons
+
+    private func handleButtons(_ s: PenSample) {
+        let pt = mapping.point(x: s.x, y: s.y)
+        if s.barrelButton != wasBarrel {
+            postButton(lowerBarrelAction, down: s.barrelButton, at: pt)
+            wasBarrel = s.barrelButton
+        }
+        if s.secondaryBarrel != wasSecondary {
+            postButton(upperBarrelAction, down: s.secondaryBarrel, at: pt)
+            wasSecondary = s.secondaryBarrel
+        }
+    }
+
+    private func postButton(_ action: PenButtonAction, down: Bool, at pt: CGPoint) {
+        let type: CGEventType
+        let button: CGMouseButton
+        switch action {
+        case .none: return
+        case .rightClick:  type = down ? .rightMouseDown : .rightMouseUp;  button = .right
+        case .middleClick: type = down ? .otherMouseDown : .otherMouseUp;  button = .center
+        case .leftClick:   type = down ? .leftMouseDown  : .leftMouseUp;   button = .left
+        }
+        guard let e = CGEvent(mouseEventSource: nil, mouseType: type,
+                              mouseCursorPosition: pt, mouseButton: button) else { return }
+        e.post(tap: .cghidEventTap)
     }
 
     // MARK: - Pointer

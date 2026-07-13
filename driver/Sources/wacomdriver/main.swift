@@ -70,9 +70,12 @@ case "log":
         vendorID: WACOM_VID, productID: PEN_PID,
         onAttach: { enableNativeMode(transport) },
         onReport: { reportID, payload in
-            // Raw-hex dump so field offsets can be mapped against known gestures.
-            let hex = payload.map { String(format: "%02x", $0) }.joined(separator: " ")
-            FileHandle.standardOutput.write(String(format: "id=0x%02x len=%2d | %@\n", reportID, payload.count, hex).data(using: .utf8)!)
+            guard reportID == PenReport.reportID, let s = PenReport.parse(payload) else { return }
+            let line = String(format: "tiltX=%4d tiltY=%4d | tip=%d barrel=%d barrel2=%d eraser=%d prox=%d | x=%6d y=%6d p=%4d\n",
+                              s.tiltX, s.tiltY,
+                              s.tipDown ? 1 : 0, s.barrelButton ? 1 : 0, s.secondaryBarrel ? 1 : 0,
+                              s.eraser ? 1 : 0, s.inRange ? 1 : 0, s.x, s.y, s.pressure)
+            FileHandle.standardOutput.write(line.data(using: .utf8)!)
         })
     transport.start()
     CFRunLoopRun()
