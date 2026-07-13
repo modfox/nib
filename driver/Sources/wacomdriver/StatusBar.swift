@@ -10,13 +10,15 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private let item: NSStatusItem
     private let prefsModel: PrefsModel
     private let prefs: PreferencesWindowController
+    private let calibration: CalibrationController
 
     private static let speeds: [(String, Double)] = [("Slow", 0.20), ("Medium", 0.35), ("Fast", 0.55)]
 
-    init(config: WacomConfig, emitter: EventEmitter, touch: TouchGestureEngine) {
+    init(config: WacomConfig, emitter: EventEmitter, touch: TouchGestureEngine, calibration: CalibrationController) {
         self.config = config
         self.emitter = emitter
         self.touch = touch
+        self.calibration = calibration
         self.item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         self.prefsModel = PrefsModel(curve: config.pressureCurve)
         self.prefs = PreferencesWindowController(model: prefsModel)
@@ -149,10 +151,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         NSWorkspace.shared.open(WacomConfig.fileURL)
     }
     @objc private func recalibrate() {
-        let a = NSAlert()
-        a.messageText = "Recalibrate the pen"
-        a.informativeText = "Quit the driver, then run:\n\n  wacomdriver calibrate\n\nfollow the on-screen cursor with the pen, then relaunch the driver."
-        a.runModal()
+        calibration.begin(bounds: cintiqDisplayBounds())
     }
     @objc private func quit() { NSApp.terminate(nil) }
 }

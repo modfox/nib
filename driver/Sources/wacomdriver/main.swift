@@ -180,6 +180,13 @@ case "run":
     let config = WacomConfig.load()
     let emitter = EventEmitter(mapping: mapping)
     let touchGesture = TouchGestureEngine()
+    // In-app calibration: captures raw pen coords at two on-screen targets, then applies.
+    let calibration = CalibrationController(apply: { cal in
+        let m = DisplayMapping(targetBounds: cintiqDisplayBounds(),
+                               xMin: cal.xMin, xMax: cal.xMax, yMin: cal.yMin, yMax: cal.yMax)
+        emitter.setMapping(m)
+        try? cal.save()
+    })
     // Touch coords (0..15360 x 0..8640) map to the Cintiq display for tap-to-click position.
     touchGesture.tapMapping = DisplayMapping(
         targetBounds: cintiqDisplayBounds(),
@@ -194,6 +201,7 @@ case "run":
         },
         onReport: { reportID, payload in
             guard reportID == PenReport.reportID, let s = PenReport.parse(payload) else { return }
+            if calibration.isActive { calibration.feed(s); return }   // capture instead of emit
             emitter.handle(s)
             touchGesture.setPenInProximity(s.inRange)   // palm rejection gating
         })
@@ -208,6 +216,7 @@ case "run":
             enableTouch(touch)
         },
         onReport: { reportID, payload in
+            guard !calibration.isActive else { return }   // ignore touch during calibration
             guard reportID == TouchReport.reportID, let f = TouchReport.parse(payload) else { return }
             touchGesture.handle(f)
         })
@@ -218,7 +227,7 @@ case "run":
     // drives the main run loop, which the HID transports are scheduled on.
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
-    let statusBar = StatusBarController(config: config, emitter: emitter, touch: touchGesture)
+    let statusBar = StatusBarController(config: config, emitter: emitter, touch: touchGesture, calibration: calibration)
     _ = statusBar   // retained for the process lifetime
     app.run()
 

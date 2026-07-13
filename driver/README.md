@@ -46,9 +46,9 @@ launchctl bootout gui/$(id -u)/com.wacom.wacomtablet 2>/dev/null
       line thickness** in pressure-aware apps. Sets both `mouseEventPressure` (NSEvent.pressure) and
       `tabletEventPointPressure`, with pressure/tilt advertised in the proximity capability mask.
 - [x] Detect + map to the Cintiq's own display (matches native 3840x2160 mode; maps to its bounds).
-- [x] **Calibration** — `wacomdriver calibrate` (2-point cursor-align) saves active raw range to
-      `~/.config/wacomdriver/calibration.json`; `run` loads it. Tracking confirmed spot-on live.
-      (Active range measured: X[443..105075], Y[465..59317].)
+- [x] **Calibration** — in-app overlay (menu → Recalibrate…): full-screen crosshair targets on
+      the Cintiq, tap two points with the pen, applies + saves live. Also the CLI `wacomdriver
+      calibrate`. Saved to `~/.config/wacomdriver/calibration.json`; `run` loads it.
 - [x] **Persistence/packaging** — installed as `~/Applications/WacomDTH2420Driver.app` + LaunchAgent
       `com.modfox.wacomdriver` (auto-start, KeepAlive). Stock agents permanently disabled. Requires
       the `.app` bundle for TCC Accessibility to work. See `INSTALL.md`. Running clean, verified live.
