@@ -66,9 +66,10 @@ func enableNativeMode(_ t: HIDTransport, _ profile: DeviceProfile) {
 
 // Touch enable: send the profile's vendor OUTPUT reports to enable the multitouch sensor.
 func enableTouch(_ t: HIDTransport, _ profile: DeviceProfile) {
-    let results = t.applyOutputs(profile.touchEnable)
-    let summary = results.enumerated()
-        .map { "\($0.offset == 0 ? "multitouch" : "configure")=\($0.element ? "ok" : "FAIL")" }
+    // Label by index + report ID so the log stays correct for any profile's sequence,
+    // not just the DTH2420's specific two-write enable.
+    let summary = zip(profile.touchEnable, t.applyOutputs(profile.touchEnable)).enumerated()
+        .map { String(format: "[%d] 0x%02x=%@", $0.offset, $0.element.0.reportID, $0.element.1 ? "ok" : "FAIL") }
         .joined(separator: ", ")
     FileHandle.standardError.write("nib: touch-enable sent (\(summary))\n".data(using: .utf8)!)
 }
@@ -239,6 +240,9 @@ case "run":
                 log("now driving \(p.name)")
                 rebuildMappings(for: p)
             } else {
+                // Keep `activeProfile` at its last value: with no tablet, display-bounds and
+                // recalibration have no meaningful target anyway, and the last-known profile
+                // is the sanest fallback (and the likely one on replug).
                 log("no supported tablet connected")
             }
         },

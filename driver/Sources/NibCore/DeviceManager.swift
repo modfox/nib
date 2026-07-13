@@ -84,10 +84,14 @@ public final class DeviceManager {
     }
 
     private func bringUp(_ profile: DeviceProfile) {
+        // Capture the transports weakly in their own closures: a transport retains its
+        // onAttach/onReport, so a strong self-capture would cycle and leak the wrapper on
+        // every hotplug swap (the C ctx is freed by stop(), but the Swift object would not).
         var penT: HIDTransport!
         penT = HIDTransport(
             vendorID: profile.vendorID, productID: profile.penPID,
-            onAttach: { [weak self] in
+            onAttach: { [weak self, weak penT] in
+                guard let penT else { return }
                 let results = penT.applyFeatures(profile.initSequence)
                 self?.handlers.onEnableResult?("pen", results)
             },
@@ -102,7 +106,8 @@ public final class DeviceManager {
         var touchT: HIDTransport!
         touchT = HIDTransport(
             vendorID: profile.vendorID, productID: profile.touchPID,
-            onAttach: { [weak self] in
+            onAttach: { [weak self, weak touchT] in
+                guard let touchT else { return }
                 let results = touchT.applyOutputs(profile.touchEnable)
                 self?.handlers.onEnableResult?("touch", results)
             },
