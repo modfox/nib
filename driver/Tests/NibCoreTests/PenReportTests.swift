@@ -47,6 +47,15 @@ final class PenReportTests: XCTestCase {
         XCTAssertNil(PenReport.parse(wrongID))                                // wrong report ID
     }
 
+    func testParsesViaExplicitProfileLayout() throws {
+        // The layout-parameterized path (used for multi-device support) must decode the
+        // reference report identically to the default.
+        let r = hex("10 61 fa c3 00 2d 69 00 51 0b f4 01 00 00 00 00 20 11 22 33 44 42 08 10 00 42 08")
+        let viaDefault = try XCTUnwrap(PenReport.parse(r))
+        let viaProfile = try XCTUnwrap(PenReport.parse(r, DeviceProfile.dth2420.pen))
+        XCTAssertEqual(viaDefault, viaProfile)
+    }
+
     func testMappingCornersAndClamp() {
         let m = DisplayMapping(targetBounds: CGRect(x: 0, y: 0, width: 3840, height: 2160))
         XCTAssertEqual(m.point(x: 0, y: 0), CGPoint(x: 0, y: 0))
