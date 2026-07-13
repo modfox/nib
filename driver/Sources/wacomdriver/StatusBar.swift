@@ -56,21 +56,26 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(header)
         menu.addItem(.separator())
 
-        addCheck(menu, "Touch Enabled", config.touchEnabled, #selector(toggleTouch))
-        addCheck(menu, "Palm Rejection", config.palmRejection, #selector(togglePalm))
-        addCheck(menu, "Tap to Click", config.tapToClick, #selector(toggleTap))
-        addCheck(menu, "3-Finger Swipe", config.threeFingerSwipe, #selector(toggleSwipe))
-        addCheck(menu, "Natural Scrolling", effectiveNatural(), #selector(toggleNatural))
-
+        // Touch controls submenu.
+        let touchItem = NSMenuItem(title: "Touch Controls", action: nil, keyEquivalent: "")
+        let touchMenu = NSMenu()
+        addCheck(touchMenu, "Touch Enabled", config.touchEnabled, #selector(toggleTouch))
+        addCheck(touchMenu, "Palm Rejection", config.palmRejection, #selector(togglePalm))
+        addCheck(touchMenu, "Tap to Click", config.tapToClick, #selector(toggleTap))
+        addCheck(touchMenu, "3-Finger Swipe", config.threeFingerSwipe, #selector(toggleSwipe))
+        addCheck(touchMenu, "Natural Scrolling", effectiveNatural(), #selector(toggleNatural))
         let speed = NSMenuItem(title: "Scroll Speed", action: nil, keyEquivalent: "")
         let speedMenu = NSMenu()
         for (i, s) in Self.speeds.enumerated() {
             let mi = radio(s.0, on: abs(config.scrollGain - s.1) < 0.001, #selector(setSpeed(_:)))
-            mi.tag = i; mi.target = self; speedMenu.addItem(mi)
+            mi.tag = i; speedMenu.addItem(mi)
         }
         speed.submenu = speedMenu
-        menu.addItem(speed)
+        touchMenu.addItem(speed)
+        touchItem.submenu = touchMenu
+        menu.addItem(touchItem)
 
+        // Pen side buttons (top level).
         menu.addItem(buttonSubmenu("Lower Side Button", current: config.lowerBarrel, action: #selector(setLower(_:))))
         menu.addItem(buttonSubmenu("Upper Side Button", current: config.upperBarrel, action: #selector(setUpper(_:))))
 
@@ -99,11 +104,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private func addCheck(_ menu: NSMenu, _ title: String, _ on: Bool, _ action: Selector) {
         let mi = NSMenuItem(title: title, action: action, keyEquivalent: "")
         mi.state = on ? .on : .off
+        mi.target = self          // works at any submenu depth
         menu.addItem(mi)
     }
     private func radio(_ title: String, on: Bool, _ action: Selector) -> NSMenuItem {
         let mi = NSMenuItem(title: title, action: action, keyEquivalent: "")
         mi.state = on ? .on : .off
+        mi.target = self
         return mi
     }
 
