@@ -180,6 +180,11 @@ case "run":
     let config = WacomConfig.load()
     let emitter = EventEmitter(mapping: mapping)
     let touchGesture = TouchGestureEngine()
+    // Touch coords (0..15360 x 0..8640) map to the Cintiq display for tap-to-click position.
+    touchGesture.tapMapping = DisplayMapping(
+        targetBounds: cintiqDisplayBounds(),
+        xMin: 0, xMax: Double(TouchContact.xLogicalMax),
+        yMin: 0, yMax: Double(TouchContact.yLogicalMax))
     var transport: HIDTransport!
     transport = HIDTransport(
         vendorID: WACOM_VID, productID: PEN_PID,

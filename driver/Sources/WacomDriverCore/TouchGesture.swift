@@ -19,6 +19,16 @@ public final class TouchGestureEngine {
     public var palmRejection = true
     public var palmCooldown: TimeInterval = 0.6
 
+    /// Tap-to-click: a quick single-finger tap (short, little movement) → left click
+    /// at the tapped location. Needs `tapMapping` to convert touch coords to screen points.
+    public var tapToClick = true
+    public var tapMapping: DisplayMapping?
+    private let tapMaxDuration: TimeInterval = 0.30
+    private let tapMoveThreshold = 300.0   // touch units (~35 px)
+    private var tapActive = false
+    private var tapStart: (x: Double, y: Double, t: TimeInterval) = (0, 0, 0)
+    private var tapMoved = 0.0
+
     private var penInProximity = false
     private var penLeftAt: TimeInterval = -1e9
 
@@ -37,9 +47,11 @@ public final class TouchGestureEngine {
     public init() {}
 
     public func handle(_ frame: TouchFrame) {
-        guard enabled, !penBlocking else { lastCentroid = nil; return }
+        guard enabled, !penBlocking else { lastCentroid = nil; tapActive = false; return }
         let down = frame.contacts.filter { $0.down }
         defer { lastCount = down.count }
+
+        if tapToClick { updateTap(down) }
 
         guard down.count == 2 else { lastCentroid = nil; return }
 
@@ -65,5 +77,42 @@ public final class TouchGestureEngine {
                               wheelCount: 2, wheel1: Int32(dy), wheel2: Int32(dx), wheel3: 0)
         else { return }
         e.post(tap: .cghidEventTap)
+    }
+
+    // MARK: - Tap to click
+
+    private func updateTap(_ down: [TouchContact]) {
+        let now = ProcessInfo.processInfo.systemUptime
+        switch down.count {
+        case 1:
+            let f = down[0]
+            if !tapActive && lastCount == 0 {
+                tapActive = true
+                tapStart = (Double(f.x), Double(f.y), now)
+                tapMoved = 0
+            } else if tapActive {
+                let dx = Double(f.x) - tapStart.x, dy = Double(f.y) - tapStart.y
+                tapMoved = max(tapMoved, (dx * dx + dy * dy).squareRoot())
+            }
+        case 0:
+            if tapActive {
+                let quick = (now - tapStart.t) <= tapMaxDuration
+                if quick && tapMoved <= tapMoveThreshold {
+                    emitTapClick(x: Int(tapStart.x), y: Int(tapStart.y))
+                }
+                tapActive = false
+            }
+        default:
+            tapActive = false   // 2+ fingers is a gesture, not a tap
+        }
+    }
+
+    private func emitTapClick(x: Int, y: Int) {
+        guard let m = tapMapping else { return }
+        let pt = m.point(x: x, y: y)
+        for type in [CGEventType.leftMouseDown, .leftMouseUp] {
+            CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: pt, mouseButton: .left)?
+                .post(tap: .cghidEventTap)
+        }
     }
 }

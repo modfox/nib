@@ -65,7 +65,9 @@ launchctl bootout gui/$(id -u)/com.wacom.wacomtablet 2>/dev/null
       applied live to the engines.
 - [x] **Palm rejection** — suppresses touch while the pen is in proximity (+0.6s cooldown after
       lift); menu-toggleable. Pen proximity is fed from the pen report stream into the touch engine.
+- [x] **Tap-to-click** — quick single-finger tap → left click at the tapped point (touch coords
+      mapped to the display); menu-toggleable. Guards on duration + movement + single finger.
 - [ ] ExpressKeys / touch-ring (pen report 0x11/0x13).
-- [ ] More touch gestures (tap-to-click, 3-finger swipe; pinch-zoom needs private gesture APIs).
+- [ ] More touch gestures (3-finger swipe; pinch-zoom needs private gesture APIs).
 - [ ] Pressure-curve config; full preferences window.
 - [ ] Developer ID signing + notarization (for distributing to other machines).

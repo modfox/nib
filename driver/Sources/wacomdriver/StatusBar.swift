@@ -39,6 +39,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private func apply() {
         touch.enabled = config.touchEnabled
         touch.palmRejection = config.palmRejection
+        touch.tapToClick = config.tapToClick
         touch.scrollGain = config.scrollGain
         touch.naturalScrolling = effectiveNatural()
         emitter.lowerBarrelAction = config.lowerBarrel
@@ -56,6 +57,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         addCheck(menu, "Touch Enabled", config.touchEnabled, #selector(toggleTouch))
         addCheck(menu, "Palm Rejection", config.palmRejection, #selector(togglePalm))
+        addCheck(menu, "Tap to Click", config.tapToClick, #selector(toggleTap))
         addCheck(menu, "Natural Scrolling", effectiveNatural(), #selector(toggleNatural))
 
         let speed = NSMenuItem(title: "Scroll Speed", action: nil, keyEquivalent: "")
@@ -106,6 +108,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     // MARK: - Actions
     @objc private func toggleTouch() { config.touchEnabled.toggle(); apply() }
     @objc private func togglePalm() { config.palmRejection.toggle(); apply() }
+    @objc private func toggleTap() { config.tapToClick.toggle(); apply() }
     @objc private func toggleNatural() { config.naturalScrolling = !effectiveNatural(); apply() }
     @objc private func setSpeed(_ sender: NSMenuItem) { config.scrollGain = Self.speeds[sender.tag].1; apply() }
     @objc private func setLower(_ sender: NSMenuItem) { config.lowerBarrel = Self.actions[sender.tag].1; apply() }
