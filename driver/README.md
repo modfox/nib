@@ -67,7 +67,11 @@ launchctl bootout gui/$(id -u)/com.wacom.wacomtablet 2>/dev/null
       lift); menu-toggleable. Pen proximity is fed from the pen report stream into the touch engine.
 - [x] **Tap-to-click** — quick single-finger tap → left click at the tapped point (touch coords
       mapped to the display); menu-toggleable. Guards on duration + movement + single finger.
+- [x] **3-finger swipe** — up→Mission Control, down→App Exposé, left/right→switch spaces.
+      Fired via `osascript`/System Events (raw CGEvent didn't trigger these system shortcuts),
+      so it needs a one-time **Automation** permission grant. Menu-toggleable. Scroll is
+      suppressed for any touch that reaches 3 fingers (plus a 60ms settle) so swipes don't leak scroll.
 - [ ] ExpressKeys / touch-ring (pen report 0x11/0x13).
-- [ ] More touch gestures (3-finger swipe; pinch-zoom needs private gesture APIs).
+- [ ] Stretch: phased/gesture scroll for Safari swipe-navigation (plain scroll for now); pinch-zoom.
 - [ ] Pressure-curve config; full preferences window.
 - [ ] Developer ID signing + notarization (for distributing to other machines).
