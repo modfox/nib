@@ -12,6 +12,7 @@ public struct WacomConfig: Codable, Sendable, Equatable {
     public var naturalScrolling: Bool? = nil
     public var lowerBarrel: PenButtonAction = .rightClick
     public var upperBarrel: PenButtonAction = .middleClick
+    public var pressureCurve: PressureCurve = .linear
 
     public init() {}
 
@@ -26,6 +27,7 @@ public struct WacomConfig: Codable, Sendable, Equatable {
         naturalScrolling = try c.decodeIfPresent(Bool.self, forKey: .naturalScrolling)
         lowerBarrel      = try c.decodeIfPresent(PenButtonAction.self, forKey: .lowerBarrel) ?? def.lowerBarrel
         upperBarrel      = try c.decodeIfPresent(PenButtonAction.self, forKey: .upperBarrel) ?? def.upperBarrel
+        pressureCurve    = try c.decodeIfPresent(PressureCurve.self, forKey: .pressureCurve) ?? def.pressureCurve
         _ = def
     }
 

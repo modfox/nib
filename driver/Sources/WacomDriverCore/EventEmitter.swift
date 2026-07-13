@@ -24,6 +24,10 @@ public final class EventEmitter {
     /// Verified: lower side button = `barrelButton`, upper = `secondaryBarrel`.
     public var lowerBarrelAction: PenButtonAction = .rightClick
     public var upperBarrelAction: PenButtonAction = .middleClick
+    /// Response curve applied to normalized pen pressure before emission.
+    public var pressureCurve: PressureCurve = .linear
+    /// Reports raw normalized pressure [0,1] each pointer event (for the prefs preview).
+    public var pressureObserver: ((Double) -> Void)?
 
     public init(mapping: DisplayMapping, deviceID: UInt16 = 1) {
         self.mapping = mapping
@@ -98,7 +102,9 @@ public final class EventEmitter {
         guard let e = CGEvent(mouseEventSource: nil, mouseType: type,
                               mouseCursorPosition: pt, mouseButton: .left) else { return }
 
-        let normPressure = Double(s.pressure) / pressureMax   // 0.0 ... 1.0
+        let rawPressure = Double(s.pressure) / pressureMax     // 0.0 ... 1.0
+        pressureObserver?(rawPressure)
+        let normPressure = pressureCurve.evaluate(rawPressure) // shaped by the response curve
 
         // Tag as a tablet-pointer subtype and fill tablet fields.
         e.setIntegerValueField(.mouseEventSubtype, value: Int64(CGEventMouseSubtype.tabletPoint.rawValue))

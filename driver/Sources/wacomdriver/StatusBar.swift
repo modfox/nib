@@ -8,6 +8,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private let emitter: EventEmitter
     private let touch: TouchGestureEngine
     private let item: NSStatusItem
+    private let prefsModel: PrefsModel
+    private let prefs: PreferencesWindowController
 
     private static let speeds: [(String, Double)] = [("Slow", 0.20), ("Medium", 0.35), ("Fast", 0.55)]
 
@@ -16,6 +18,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         self.emitter = emitter
         self.touch = touch
         self.item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        self.prefsModel = PrefsModel(curve: config.pressureCurve)
+        self.prefs = PreferencesWindowController(model: prefsModel)
         super.init()
         if let button = item.button {
             button.image = NSImage(systemSymbolName: "hand.draw", accessibilityDescription: "Wacom Driver")
@@ -23,6 +27,20 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         let menu = NSMenu()
         menu.delegate = self
         item.menu = menu
+
+        // Preferences (pressure curve) edits flow back to the driver.
+        prefsModel.onLive = { [weak self] curve in
+            self?.config.pressureCurve = curve
+            self?.emitter.pressureCurve = curve
+        }
+        prefsModel.onCommit = { [weak self] in try? self?.config.save() }
+        // Feed live pressure to the prefs window (throttled, only while it is open).
+        emitter.pressureObserver = { [weak self] p in
+            guard let self, self.prefs.isShown else { return }
+            if p == 0 || abs(p - self.prefsModel.livePressure) > 0.01 {
+                self.prefsModel.livePressure = p
+            }
+        }
         apply()   // push loaded config into the engines
     }
 
@@ -45,6 +63,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         touch.naturalScrolling = effectiveNatural()
         emitter.lowerBarrelAction = config.lowerBarrel
         emitter.upperBarrelAction = config.upperBarrel
+        emitter.pressureCurve = config.pressureCurve
         try? config.save()
     }
 
@@ -80,6 +99,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(buttonSubmenu("Upper Side Button", current: config.upperBarrel, action: #selector(setUpper(_:))))
 
         menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "Preferences…", action: #selector(openPrefs), keyEquivalent: ","))
         menu.addItem(NSMenuItem(title: "Recalibrate…", action: #selector(recalibrate), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Open Config File", action: #selector(openConfig), keyEquivalent: ""))
         menu.addItem(.separator())
@@ -123,6 +143,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     @objc private func setSpeed(_ sender: NSMenuItem) { config.scrollGain = Self.speeds[sender.tag].1; apply() }
     @objc private func setLower(_ sender: NSMenuItem) { config.lowerBarrel = Self.actions[sender.tag].1; apply() }
     @objc private func setUpper(_ sender: NSMenuItem) { config.upperBarrel = Self.actions[sender.tag].1; apply() }
+    @objc private func openPrefs() { prefs.show() }
     @objc private func openConfig() {
         try? config.save()
         NSWorkspace.shared.open(WacomConfig.fileURL)
