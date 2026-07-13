@@ -25,9 +25,11 @@ Then sign with `codesign -s modfox-codesign …` (self-signed/untrusted is fine 
 cd driver
 swift build -c release
 APP="$HOME/Applications/Nib.app"
-mkdir -p "$APP/Contents/MacOS"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/nib "$APP/Contents/MacOS/nib"
-# Info.plist is committed under packaging/ — copy it if recreating the bundle.
+# Info.plist + app icon are committed under packaging/ — copy them when (re)creating the bundle.
+cp packaging/Info.plist "$APP/Contents/Info.plist"
+cp packaging/Nib.icns "$APP/Contents/Resources/Nib.icns"
 codesign -s modfox-codesign --force --deep --identifier com.modfox.nib "$APP"
 launchctl kickstart -k gui/$(id -u)/com.modfox.nib   # if already loaded
 ```
