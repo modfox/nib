@@ -20,8 +20,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         self.touch = touch
         self.calibration = calibration
         self.item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        self.prefsModel = PrefsModel(curve: config.pressureCurve)
-        self.prefs = PreferencesWindowController(model: prefsModel)
+        self.prefsModel = PrefsModel(config: config)
+        self.prefs = PreferencesWindowController(model: prefsModel,
+                                                 onRecalibrate: { calibration.begin(bounds: cintiqDisplayBounds()) })
         super.init()
         if let button = item.button {
             button.image = NSImage(systemSymbolName: "hand.draw", accessibilityDescription: "Wacom Driver")
@@ -30,12 +31,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.delegate = self
         item.menu = menu
 
-        // Preferences (pressure curve) edits flow back to the driver.
-        prefsModel.onLive = { [weak self] curve in
-            self?.config.pressureCurve = curve
-            self?.emitter.pressureCurve = curve
+        // Preferences-window edits (full config) flow back to the driver.
+        prefsModel.onLive = { [weak self] cfg in self?.config = cfg; self?.applyEngines() }
+        prefsModel.onCommit = { [weak self] cfg in
+            self?.config = cfg; self?.applyEngines(); try? self?.config.save()
         }
-        prefsModel.onCommit = { [weak self] in try? self?.config.save() }
         // Feed live pressure to the prefs window (throttled, only while it is open).
         emitter.pressureObserver = { [weak self] p in
             guard let self, self.prefs.isShown else { return }
@@ -55,8 +55,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         return true
     }
 
-    /// Push config into the live engines and persist it.
-    private func apply() {
+    /// Push config into the live engines (no disk write).
+    private func applyEngines() {
         touch.enabled = config.touchEnabled
         touch.palmRejection = config.palmRejection
         touch.tapToClick = config.tapToClick
@@ -66,6 +66,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         emitter.lowerBarrelAction = config.lowerBarrel
         emitter.upperBarrelAction = config.upperBarrel
         emitter.pressureCurve = config.pressureCurve
+    }
+
+    /// Apply to the engines and persist. Also keeps the prefs window in sync.
+    private func apply() {
+        applyEngines()
+        prefsModel.config = config
         try? config.save()
     }
 
@@ -145,7 +151,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     @objc private func setSpeed(_ sender: NSMenuItem) { config.scrollGain = Self.speeds[sender.tag].1; apply() }
     @objc private func setLower(_ sender: NSMenuItem) { config.lowerBarrel = Self.actions[sender.tag].1; apply() }
     @objc private func setUpper(_ sender: NSMenuItem) { config.upperBarrel = Self.actions[sender.tag].1; apply() }
-    @objc private func openPrefs() { prefs.show() }
+    @objc private func openPrefs() { prefsModel.config = config; prefs.show() }
     @objc private func openConfig() {
         try? config.save()
         NSWorkspace.shared.open(WacomConfig.fileURL)

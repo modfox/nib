@@ -24,6 +24,9 @@ let package = Package(
         .executableTarget(
             name: "wacomdriver",
             dependencies: ["WacomDriverCore", "CWacomHID"],
+            // Single-threaded AppKit agent (everything on the main run loop); use the
+            // Swift 5 language mode to avoid false-positive strict-concurrency errors.
+            swiftSettings: [.swiftLanguageMode(.v5)],
             linkerSettings: [
                 .linkedFramework("CoreGraphics"),
                 .linkedFramework("ApplicationServices"),

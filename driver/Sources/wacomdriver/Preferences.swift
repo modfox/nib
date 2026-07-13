@@ -2,49 +2,90 @@ import SwiftUI
 import AppKit
 import WacomDriverCore
 
-/// Backing model for the preferences window. Edits flow back to the driver via callbacks.
+/// Backing model for the preferences window — holds the whole config. Edits flow back
+/// to the driver via callbacks: `onLive` applies to the engines, `onCommit` also saves.
 final class PrefsModel: ObservableObject {
-    @Published var curve: PressureCurve
+    @Published var config: WacomConfig
     @Published var livePressure: Double = 0
-    /// Called continuously while editing (apply to the live engine, no disk write).
-    var onLive: ((PressureCurve) -> Void)?
-    /// Called when an edit finishes (persist to disk).
-    var onCommit: (() -> Void)?
+    var onLive: ((WacomConfig) -> Void)?
+    var onCommit: ((WacomConfig) -> Void)?
 
-    init(curve: PressureCurve) { self.curve = curve }
+    init(config: WacomConfig) { self.config = config }
 
-    func applyLive() { onLive?(curve) }
-    func commit() { onCommit?() }
-    func set(_ c: PressureCurve) { curve = c; applyLive(); commit() }
+    func live() { onLive?(config) }                        // apply, no save (during a drag)
+    func commit() { onLive?(config); onCommit?(config) }    // apply + save
 }
 
+/// Full settings window: mirrors the menu-bar quick toggles plus the pressure curve.
 struct PreferencesView: View {
     @ObservedObject var model: PrefsModel
+    var onRecalibrate: () -> Void
 
     private static let soft = PressureCurve(points: [.init(x: 0, y: 0), .init(x: 0.25, y: 0.45),
         .init(x: 0.5, y: 0.7), .init(x: 0.75, y: 0.88), .init(x: 1, y: 1)])
     private static let firm = PressureCurve(points: [.init(x: 0, y: 0), .init(x: 0.25, y: 0.1),
         .init(x: 0.5, y: 0.28), .init(x: 0.75, y: 0.55), .init(x: 1, y: 1)])
 
+    /// Binding to a config field that applies + saves on change.
+    private func bind<T>(_ kp: WritableKeyPath<WacomConfig, T>) -> Binding<T> {
+        Binding(get: { model.config[keyPath: kp] },
+                set: { model.config[keyPath: kp] = $0; model.commit() })
+    }
+
+    private var naturalBinding: Binding<Bool> {
+        Binding(get: { effectiveNatural() },
+                set: { model.config.naturalScrolling = $0; model.commit() })
+    }
+    private func effectiveNatural() -> Bool {
+        if let v = model.config.naturalScrolling { return v }
+        if UserDefaults.standard.object(forKey: "com.apple.swipescrolldirection") != nil {
+            return UserDefaults.standard.bool(forKey: "com.apple.swipescrolldirection")
+        }
+        return true
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Pen Pressure Curve").font(.headline)
-            Text("Input pressure (→) mapped to output. Drag the middle points.")
-                .font(.caption).foregroundStyle(.secondary)
-            CurveEditor(curve: $model.curve, live: model.livePressure,
-                        onLive: { model.applyLive() }, onCommit: { model.commit() })
-                .frame(width: 320, height: 320)
-            HStack(spacing: 8) {
-                Button("Linear") { model.set(.linear) }
-                Button("Soft") { model.set(Self.soft) }
-                Button("Firm") { model.set(Self.firm) }
-                Spacer()
-                Text(String(format: "Live: %3.0f%%", model.livePressure * 100))
-                    .monospacedDigit().foregroundStyle(.secondary)
+        Form {
+            Section("Touch") {
+                Toggle("Touch Enabled", isOn: bind(\.touchEnabled))
+                Toggle("Palm Rejection", isOn: bind(\.palmRejection))
+                Toggle("Tap to Click", isOn: bind(\.tapToClick))
+                Toggle("Three-Finger Swipe", isOn: bind(\.threeFingerSwipe))
+                Toggle("Natural Scrolling", isOn: naturalBinding)
+                Picker("Scroll Speed", selection: bind(\.scrollGain)) {
+                    Text("Slow").tag(0.20); Text("Medium").tag(0.35); Text("Fast").tag(0.55)
+                }.pickerStyle(.segmented)
+            }
+
+            Section("Pen") {
+                Picker("Lower Side Button", selection: bind(\.lowerBarrel)) { buttonOptions }
+                Picker("Upper Side Button", selection: bind(\.upperBarrel)) { buttonOptions }
+                Button("Recalibrate…") { onRecalibrate() }
+            }
+
+            Section("Pen Pressure Curve") {
+                CurveEditor(curve: bind(\.pressureCurve), live: model.livePressure,
+                            onLive: { model.live() }, onCommit: { model.commit() })
+                    .frame(height: 240)
+                HStack(spacing: 8) {
+                    Button("Linear") { model.config.pressureCurve = .linear; model.commit() }
+                    Button("Soft") { model.config.pressureCurve = Self.soft; model.commit() }
+                    Button("Firm") { model.config.pressureCurve = Self.firm; model.commit() }
+                    Spacer()
+                    Text(String(format: "Live: %3.0f%%", model.livePressure * 100))
+                        .monospacedDigit().foregroundStyle(.secondary)
+                }
             }
         }
-        .padding(20)
-        .frame(width: 360)
+        .formStyle(.grouped)
+        .frame(width: 420, height: 640)
+    }
+
+    @ViewBuilder private var buttonOptions: some View {
+        Text("Right Click").tag(PenButtonAction.rightClick)
+        Text("Middle Click").tag(PenButtonAction.middleClick)
+        Text("Left Click").tag(PenButtonAction.leftClick)
+        Text("Disabled").tag(PenButtonAction.none)
     }
 }
 
@@ -116,13 +157,17 @@ struct CurveEditor: View {
 final class PreferencesWindowController {
     private var window: NSWindow?
     let model: PrefsModel
+    private let onRecalibrate: () -> Void
     var isShown: Bool { window?.isVisible ?? false }
 
-    init(model: PrefsModel) { self.model = model }
+    init(model: PrefsModel, onRecalibrate: @escaping () -> Void) {
+        self.model = model
+        self.onRecalibrate = onRecalibrate
+    }
 
     func show() {
         if window == nil {
-            let hosting = NSHostingController(rootView: PreferencesView(model: model))
+            let hosting = NSHostingController(rootView: PreferencesView(model: model, onRecalibrate: onRecalibrate))
             let w = NSWindow(contentViewController: hosting)
             w.title = "Wacom Driver Preferences"
             w.styleMask = [.titled, .closable]

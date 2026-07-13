@@ -71,9 +71,11 @@ launchctl bootout gui/$(id -u)/com.wacom.wacomtablet 2>/dev/null
       Fired via `osascript`/System Events (raw CGEvent didn't trigger these system shortcuts),
       so it needs a one-time **Automation** permission grant. Menu-toggleable. Scroll is
       suppressed for any touch that reaches 3 fingers (plus a 60ms settle) so swipes don't leak scroll.
-- [x] **Pressure curve + Preferences window** — SwiftUI window (menu → Preferences…) with a
-      draggable piecewise-linear curve editor, Linear/Soft/Firm presets, and a live pressure dot.
-      Curve is applied in the emitter and persisted in config (`PressureCurve`, unit-tested).
+- [x] **Unified Preferences window** — full settings UI (menu → Preferences…): Touch section
+      (enable, palm rejection, tap-to-click, 3-finger swipe, natural scrolling, scroll speed),
+      Pen section (side-button remap, Recalibrate), and a draggable pressure-curve editor with
+      Linear/Soft/Firm presets + live pressure dot. Menu-bar quick toggles are kept for fast access;
+      both write the same `WacomConfig` and apply live.
 - [ ] ExpressKeys / touch-ring (pen report 0x11/0x13).
 - [ ] Stretch: phased/gesture scroll for Safari swipe-navigation (plain scroll for now); pinch-zoom.
 - [ ] Developer ID signing + notarization (for distributing to other machines).
