@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hardened Runtime entitlements for the notarized Developer ID build.
+
+  Intentionally empty: Nib reads pen HID via IOHIDManager (IOKit) and posts
+  cursor/pressure events via CGEvent. Under the Hardened Runtime neither needs
+  an entitlement — both are gated by TCC (Input Monitoring + Accessibility),
+  which the user grants at runtime. We do NOT enable the App Sandbox, which
+  would block raw HID device access.
+-->
+<plist version="1.0">
+<dict>
+</dict>
+</plist>

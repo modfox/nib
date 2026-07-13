@@ -71,6 +71,7 @@ rm ~/Library/LaunchAgents/com.modfox.nib.plist
 rm -rf ~/Applications/Nib.app
 ```
 
-## TODO for a distributable build
-- Sign with a Developer ID identity + notarize so the cdhash is stable and grants persist
-  across updates (ad-hoc re-signing currently resets TCC).
+## Distributable builds
+The steps above use the self-signed `modfox-codesign` identity, which is fine for a
+single machine. To produce a signed + notarized `.dmg` for GitHub Releases (stable
+cdhash, so grants persist across updates), see **[RELEASING.md](RELEASING.md)**.

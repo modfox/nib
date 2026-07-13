@@ -3,6 +3,9 @@ driver/.build/
 *.o
 *.swiftmodule
 
+# Release artifacts (signed app bundle + DMG)
+driver/build/
+
 # Compiled RE tools (source is tracked; rebuild with clang)
 captures/hidinfo
 
