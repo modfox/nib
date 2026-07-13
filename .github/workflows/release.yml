@@ -1,0 +1,79 @@
+name: Release
+
+# Cut a signed + notarized DMG and publish it to a GitHub Release when a
+# v* tag is pushed, e.g.:  git tag v0.2.0 && git push origin v0.2.0
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write        # required to create the Release and upload assets
+
+jobs:
+  release:
+    name: Sign, notarize & publish
+    # Dormant until you opt in: set repository variable RELEASE_ENABLED=true
+    # (Settings → Secrets and variables → Actions → Variables) once the signing
+    # secrets are in place. Until then a v* tag push is a no-op.
+    if: vars.RELEASE_ENABLED == 'true'
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: driver
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # tags + full history for version/build stamping
+
+      # --- Import the Developer ID cert into an ephemeral keychain ------------
+      - name: Import signing certificate
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
+            -P "$MACOS_CERTIFICATE_PWD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          # Make it the default so codesign finds the identity.
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+      # --- Write the App Store Connect API key for notarytool ----------------
+      - name: Write notarization API key
+        env:
+          NOTARY_KEY: ${{ secrets.NOTARY_KEY }}
+        run: echo "$NOTARY_KEY" | base64 --decode > "$RUNNER_TEMP/notary_key.p8"
+
+      - name: Build app bundle
+        run: scripts/build-app.sh build
+
+      - name: Sign, notarize & package DMG
+        env:
+          SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          NOTARY_KEY_PATH: ${{ runner.temp }}/notary_key.p8
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
+        run: scripts/release.sh build
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            build/Nib-*.dmg
+
+      - name: Clean up keychain & key
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/build.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/notary_key.p8"
