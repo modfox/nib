@@ -35,6 +35,8 @@ In-app calibration overlay — tap the two crosshairs with the pen:
   report 0x10, touch report 0x81, pen mode-switch, touch enable) — the clean-room deliverable.
 - `recon/` — reverse-engineering findings and decompilation notes.
 - `captures/` — live HID captures (report descriptors) and the `hidinfo` dump tool.
+- `docs/ADDING-A-DEVICE.md` — how to add another tablet from a capture bundle (no code in
+  the decode path; model support is a `DeviceProfile` + regression fixtures).
 - `ROADMAP.md` — planned work and stretch ideas.
 
 ## How it works

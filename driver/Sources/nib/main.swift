@@ -264,7 +264,49 @@ case "run":
     _ = statusBar   // retained for the process lifetime
     app.run()
 
+case "capture":
+    // Raw multi-interface HID dump for bringing up a NEW device. Opens every connected
+    // interface of each known vendor, sends the best-guess Wacom enable sequences, and
+    // dumps every report as raw hex tagged by PID. Run this, then perform the labeled
+    // gestures from docs/ADDING-A-DEVICE.md (corners, hard press, lift, 1/2/3-finger
+    // touches) to produce a capture bundle for a new DeviceProfile + fixtures.
+    FileHandle.standardError.write("nib: CAPTURE mode — raw report dump for a new device (Ctrl-C to stop)\n".data(using: .utf8)!)
+    let guess = DeviceProfile.dth2420   // best-guess enable sequences for the Wacom family
+    var ifaces: [(vendor: UInt16, pid: UInt16)] = []
+    for v in Set(DeviceProfile.all.map({ $0.vendorID })) {
+        for info in HIDTransport.enumerate(vendorID: v)
+        where !ifaces.contains(where: { $0.vendor == info.vendorID && $0.pid == info.productID }) {
+            ifaces.append((info.vendorID, info.productID))
+        }
+    }
+    if ifaces.isEmpty {
+        FileHandle.standardError.write("nib: no HID interfaces found for known vendors\n".data(using: .utf8)!)
+        exit(1)
+    }
+    let ifaceList = ifaces.map { String(format: "0x%04x", $0.pid) }.joined(separator: " ")
+    FileHandle.standardError.write("nib: capturing \(ifaces.count) interface(s): \(ifaceList)\n".data(using: .utf8)!)
+    var captureTransports: [HIDTransport] = []
+    for iface in ifaces {
+        var t: HIDTransport!
+        t = HIDTransport(
+            vendorID: iface.vendor, productID: iface.pid,
+            onAttach: {
+                FileHandle.standardError.write(String(format: "nib: opened 0x%04x; sending best-guess enable\n", iface.pid).data(using: .utf8)!)
+                _ = t.applyFeatures(guess.initSequence)   // best effort; failures are expected on non-pen interfaces
+                _ = t.applyOutputs(guess.touchEnable)      // best effort; failures are expected on non-touch interfaces
+            },
+            onReport: { reportID, payload in
+                let hex = payload.map { String(format: "%02x", $0) }.joined(separator: " ")
+                FileHandle.standardOutput.write(String(format: "pid=0x%04x id=0x%02x len=%3d | %@\n",
+                                                       iface.pid, reportID, payload.count, hex).data(using: .utf8)!)
+            })
+        t.start()
+        captureTransports.append(t)
+    }
+    _ = captureTransports   // retained for the process lifetime
+    CFRunLoopRun()
+
 default:
-    FileHandle.standardError.write("usage: nib [run|log|calibrate]\n".data(using: .utf8)!)
+    FileHandle.standardError.write("usage: nib [run|log|touchlog|calibrate|capture]\n".data(using: .utf8)!)
     exit(2)
 }
