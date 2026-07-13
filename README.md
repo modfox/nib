@@ -2,8 +2,10 @@
 
 **Nib** is an independent, open-source macOS driver for the **Cintiq Pro 24 Touch
 (model DTH2420)** pen display. It was built from scratch — via clean-room reverse
-engineering — because the manufacturer's own driver does not function on current macOS.
-No dependency on OpenTabletDriver or any vendor software at runtime.
+engineering — because Wacom's drivers frequently break on new macOS releases. This one
+was created specifically because the Wacom drivers **do not work on the macOS 27
+developer beta**, leaving the tablet unusable. No dependency on OpenTabletDriver or any
+vendor software at runtime.
 
 **Working today:** pen (position with in-app calibration, an adjustable pressure curve,
 tilt, remappable side buttons), multi-touch (2-finger scroll, tap-to-click, 3-finger
@@ -29,7 +31,7 @@ In-app calibration overlay — tap the two crosshairs with the pen:
   report 0x10, touch report 0x81, pen mode-switch, touch enable) — the clean-room deliverable.
 - `recon/` — reverse-engineering findings and decompilation notes.
 - `captures/` — live HID captures (report descriptors) and the `hidinfo` dump tool.
-- `PLAN.md` — the original phased plan.
+- `ROADMAP.md` — planned work and stretch ideas.
 
 ## How it works
 1. `IOHIDManager` opens the pen (`056a:0351`) and touch (`056a:0355`) HID interfaces.
