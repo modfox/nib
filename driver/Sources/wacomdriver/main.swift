@@ -190,6 +190,7 @@ case "run":
         onReport: { reportID, payload in
             guard reportID == PenReport.reportID, let s = PenReport.parse(payload) else { return }
             emitter.handle(s)
+            touchGesture.setPenInProximity(s.inRange)   // palm rejection gating
         })
     transport.start()
 

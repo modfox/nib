@@ -63,7 +63,9 @@ launchctl bootout gui/$(id -u)/com.wacom.wacomtablet 2>/dev/null
 - [x] **Settings menu-bar app** — status-item menu: Touch Enabled, Natural Scrolling, Scroll Speed,
       Lower/Upper Side Button remap, Recalibrate, Open Config. Persists to `~/.config/wacomdriver/config.json`,
       applied live to the engines.
+- [x] **Palm rejection** — suppresses touch while the pen is in proximity (+0.6s cooldown after
+      lift); menu-toggleable. Pen proximity is fed from the pen report stream into the touch engine.
 - [ ] ExpressKeys / touch-ring (pen report 0x11/0x13).
-- [ ] More touch gestures (pinch-zoom needs private gesture APIs; tap-to-click) + palm rejection.
+- [ ] More touch gestures (tap-to-click, 3-finger swipe; pinch-zoom needs private gesture APIs).
 - [ ] Pressure-curve config; full preferences window.
 - [ ] Developer ID signing + notarization (for distributing to other machines).

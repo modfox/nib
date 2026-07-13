@@ -14,11 +14,30 @@ public final class TouchGestureEngine {
     public var naturalScrolling = true
     /// When false, touch input is ignored entirely.
     public var enabled = true
+    /// Palm rejection: suppress touch while the pen is in proximity, plus a brief
+    /// cooldown after it lifts (a resting palm often lingers as the pen leaves).
+    public var palmRejection = true
+    public var palmCooldown: TimeInterval = 0.6
+
+    private var penInProximity = false
+    private var penLeftAt: TimeInterval = -1e9
+
+    /// Fed from the pen report stream so touch can be gated on pen proximity.
+    public func setPenInProximity(_ v: Bool) {
+        if penInProximity && !v { penLeftAt = ProcessInfo.processInfo.systemUptime }
+        penInProximity = v
+    }
+
+    private var penBlocking: Bool {
+        guard palmRejection else { return false }
+        if penInProximity { return true }
+        return (ProcessInfo.processInfo.systemUptime - penLeftAt) < palmCooldown
+    }
 
     public init() {}
 
     public func handle(_ frame: TouchFrame) {
-        guard enabled else { lastCentroid = nil; return }
+        guard enabled, !penBlocking else { lastCentroid = nil; return }
         let down = frame.contacts.filter { $0.down }
         defer { lastCount = down.count }
 
