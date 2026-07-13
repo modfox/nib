@@ -11,6 +11,7 @@ public final class HIDTransport {
     private let productID: UInt16
     private let onReport: ReportHandler
     private let onAttach: (() -> Void)?
+    private let onDetach: (() -> Void)?
 
     /// A connected HID device's USB identity.
     public struct DeviceInfo: Equatable, Sendable {
@@ -30,10 +31,12 @@ public final class HIDTransport {
 
     public init(vendorID: UInt16, productID: UInt16,
                 onAttach: (() -> Void)? = nil,
+                onDetach: (() -> Void)? = nil,
                 onReport: @escaping ReportHandler) {
         self.vendorID = vendorID
         self.productID = productID
         self.onAttach = onAttach
+        self.onDetach = onDetach
         self.onReport = onReport
     }
 
@@ -54,7 +57,11 @@ public final class HIDTransport {
                 let me = Unmanaged<HIDTransport>.fromOpaque(userCtx).takeUnretainedValue()
                 me.onAttach?()
             },
-            nil,
+            { userCtx, _, _ in
+                guard let userCtx else { return }
+                let me = Unmanaged<HIDTransport>.fromOpaque(userCtx).takeUnretainedValue()
+                me.onDetach?()
+            },
             selfPtr
         )
         nib_hid_start(ctx)
@@ -76,6 +83,18 @@ public final class HIDTransport {
         return bytes.withUnsafeBufferPointer {
             nib_hid_send_output(ctx, reportID, $0.baseAddress, $0.count) == 0
         }
+    }
+
+    /// Send a profile's feature writes (pen mode-switch); returns per-write success.
+    @discardableResult
+    public func applyFeatures(_ writes: [FeatureWrite]) -> [Bool] {
+        writes.map { sendFeature(reportID: $0.reportID, $0.bytes) }
+    }
+
+    /// Send a profile's output writes (touch enable); returns per-write success.
+    @discardableResult
+    public func applyOutputs(_ writes: [OutputWrite]) -> [Bool] {
+        writes.map { sendOutput(reportID: $0.reportID, $0.bytes) }
     }
 
     public func stop() {

@@ -4,30 +4,27 @@ import ApplicationServices
 import AppKit
 import NibCore
 
-// The device Nib is driving. All model-specific identity, report layouts, mode-switch and
-// touch-enable sequences live in the profile — see NibCore/DeviceProfile.swift.
-// Resolve it from whatever tablet is actually plugged in; fall back to the reference
-// device if nothing recognized is connected yet (e.g. the agent started before attach).
-let profile: DeviceProfile = {
+// Resolve the device Nib should drive from whatever tablet is actually plugged in; fall
+// back to the reference device if nothing recognized is connected. All model-specific
+// identity, report layouts, mode-switch and touch-enable live in the profile — see
+// NibCore/DeviceProfile.swift. The one-shot modes (log/touchlog/calibrate) resolve once
+// via this helper; `run` delegates ongoing resolution + hotplug to DeviceManager.
+func detectProfile() -> DeviceProfile {
     let detected = DeviceProfile.detectConnected()
     if let p = detected.first {
         FileHandle.standardError.write("nib: detected \(p.name)\n".data(using: .utf8)!)
-        if detected.count > 1 {
-            let others = detected.dropFirst().map { $0.name }.joined(separator: ", ")
-            FileHandle.standardError.write("nib: (also connected: \(others); driving the first)\n".data(using: .utf8)!)
-        }
         return p
     }
     FileHandle.standardError.write("nib: no known tablet detected, defaulting to \(DeviceProfile.dth2420.name)\n".data(using: .utf8)!)
     return .dth2420
-}()
+}
 
 let args = CommandLine.arguments
 let mode = args.count > 1 ? args[1] : "run"
 
 /// Locate the tablet's own display so the pen maps 1:1 onto the tablet surface.
 /// Match on the profile's native panel resolution; fall back to the main display.
-func cintiqDisplayBounds() -> CGRect {
+func cintiqDisplayBounds(_ profile: DeviceProfile) -> CGRect {
     guard let panel = profile.panelSize else { return CGDisplayBounds(CGMainDisplayID()) }
     var count: UInt32 = 0
     CGGetActiveDisplayList(0, nil, &count)
@@ -49,21 +46,17 @@ func cintiqDisplayBounds() -> CGRect {
 
 // Pen mode-switch: send the profile's feature reports to put the pen into its native
 // high-resolution mode (buffers include the report-ID byte as data[0]).
-func enableNativeMode(_ t: HIDTransport) {
-    let results = profile.initSequence.map { w in
-        (w.reportID, t.sendFeature(reportID: w.reportID, w.bytes))
-    }
-    let summary = results.map { String(format: "0x%02x=%@", $0.0, $0.1 ? "ok" : "FAIL") }.joined(separator: ", ")
+func enableNativeMode(_ t: HIDTransport, _ profile: DeviceProfile) {
+    let results = zip(profile.initSequence, t.applyFeatures(profile.initSequence))
+    let summary = results.map { String(format: "0x%02x=%@", $0.0.reportID, $0.1 ? "ok" : "FAIL") }.joined(separator: ", ")
     FileHandle.standardError.write("nib: mode-switch sent (\(summary))\n".data(using: .utf8)!)
 }
 
 // Touch enable: send the profile's vendor OUTPUT reports to enable the multitouch sensor.
-func enableTouch(_ t: HIDTransport) {
-    let results = profile.touchEnable.map { w in
-        (w.reportID, t.sendOutput(reportID: w.reportID, w.bytes))
-    }
+func enableTouch(_ t: HIDTransport, _ profile: DeviceProfile) {
+    let results = t.applyOutputs(profile.touchEnable)
     let summary = results.enumerated()
-        .map { "\($0.offset == 0 ? "multitouch" : "configure")=\($0.element.1 ? "ok" : "FAIL")" }
+        .map { "\($0.offset == 0 ? "multitouch" : "configure")=\($0.element ? "ok" : "FAIL")" }
         .joined(separator: ", ")
     FileHandle.standardError.write("nib: touch-enable sent (\(summary))\n".data(using: .utf8)!)
 }
@@ -72,10 +65,11 @@ switch mode {
 case "log":
     // Confirm report-0x10 field offsets against real gestures.
     FileHandle.standardError.write("nib: logging pen reports (Ctrl-C to stop)\n".data(using: .utf8)!)
+    let profile = detectProfile()
     var transport: HIDTransport!
     transport = HIDTransport(
         vendorID: profile.vendorID, productID: profile.penPID,
-        onAttach: { enableNativeMode(transport) },
+        onAttach: { enableNativeMode(transport, profile) },
         onReport: { reportID, payload in
             guard reportID == profile.pen.reportID, let s = PenReport.parse(payload, profile.pen) else { return }
             let line = String(format: "tiltX=%4d tiltY=%4d | tip=%d barrel=%d barrel2=%d eraser=%d prox=%d | x=%6d y=%6d p=%4d\n",
@@ -90,12 +84,13 @@ case "log":
 case "touchlog":
     // Raw-hex dump of the touch interface (PID 0x0355) to decode the finger report layout.
     FileHandle.standardError.write("nib: logging TOUCH reports (Ctrl-C to stop)\n".data(using: .utf8)!)
+    let profile = detectProfile()
     var touchT: HIDTransport!
     touchT = HIDTransport(
         vendorID: profile.vendorID, productID: profile.touchPID,
         onAttach: {
             FileHandle.standardError.write("nib: TOUCH device opened; sending enable…\n".data(using: .utf8)!)
-            enableTouch(touchT)
+            enableTouch(touchT, profile)
         },
         onReport: { reportID, payload in
             let hex = payload.map { String(format: "%02x", $0) }.joined(separator: " ")
@@ -108,7 +103,8 @@ case "calibrate":
     // Two-point calibration: warp the cursor to a target, the user aligns the pen tip
     // and holds; we capture the raw pen coords, then derive the pen active-range that
     // spans the display and save it. Does NOT emit pen events (cursor stays on target).
-    let bounds = cintiqDisplayBounds()
+    let profile = detectProfile()
+    let bounds = cintiqDisplayBounds(profile)
     func cerr(_ s: String) { FileHandle.standardError.write((s + "\n").data(using: .utf8)!) }
     let p1 = CGPoint(x: bounds.minX + 0.15 * bounds.width, y: bounds.minY + 0.15 * bounds.height)
     let p2 = CGPoint(x: bounds.minX + 0.85 * bounds.width, y: bounds.minY + 0.85 * bounds.height)
@@ -146,7 +142,7 @@ case "calibrate":
     var calTransport: HIDTransport!
     calTransport = HIDTransport(
         vendorID: profile.vendorID, productID: profile.penPID,
-        onAttach: { enableNativeMode(calTransport) },
+        onAttach: { enableNativeMode(calTransport, profile) },
         onReport: { reportID, payload in
             guard reportID == profile.pen.reportID, let s = PenReport.parse(payload, profile.pen) else { return }
             if !s.tipDown || !s.inRange {
@@ -176,64 +172,78 @@ case "run":
     if !trusted {
         FileHandle.standardError.write("nib: NOT trusted — events will be dropped. Grant this binary Accessibility in System Settings, then relaunch.\n".data(using: .utf8)!)
     }
-    var mapping = DisplayMapping(targetBounds: cintiqDisplayBounds())
-    if let cal = Calibration.load() {
-        cal.apply(to: &mapping)
-        FileHandle.standardError.write("nib: loaded calibration \(Calibration.fileURL.path)\n".data(using: .utf8)!)
-    } else {
-        FileHandle.standardError.write("nib: no calibration found, using full pen range\n".data(using: .utf8)!)
-    }
+    func log(_ s: String) { FileHandle.standardError.write("nib: \(s)\n".data(using: .utf8)!) }
+
     let config = NibConfig.load()
-    let emitter = EventEmitter(mapping: mapping)
+    // Start with an identity mapping; DeviceManager rebuilds it once a profile resolves.
+    let emitter = EventEmitter(mapping: DisplayMapping(targetBounds: CGDisplayBounds(CGMainDisplayID())))
     let touchGesture = TouchGestureEngine()
-    // In-app calibration: captures raw pen coords at two on-screen targets, then applies.
+
+    // (Re)build the pen + touch coordinate mappings for a given tablet. Called whenever the
+    // active device changes, and after an in-app calibration.
+    var activeProfile = DeviceProfile.dth2420
+    func rebuildMappings(for profile: DeviceProfile) {
+        let bounds = cintiqDisplayBounds(profile)
+        var penMap = DisplayMapping(targetBounds: bounds,
+                                    xMax: Double(profile.pen.xLogicalMax),
+                                    yMax: Double(profile.pen.yLogicalMax))
+        if let cal = Calibration.load() {
+            cal.apply(to: &penMap)
+            log("loaded calibration \(Calibration.fileURL.path)")
+        } else {
+            log("no calibration found, using full pen range")
+        }
+        emitter.setMapping(penMap)
+        touchGesture.tapMapping = DisplayMapping(
+            targetBounds: bounds,
+            xMin: 0, xMax: Double(profile.touch.xLogicalMax),
+            yMin: 0, yMax: Double(profile.touch.yLogicalMax))
+    }
+
+    // In-app calibration: captures raw pen coords at two on-screen targets, then applies
+    // them against the currently-active device's display bounds.
     let calibration = CalibrationController(apply: { cal in
-        let m = DisplayMapping(targetBounds: cintiqDisplayBounds(),
+        let m = DisplayMapping(targetBounds: cintiqDisplayBounds(activeProfile),
                                xMin: cal.xMin, xMax: cal.xMax, yMin: cal.yMin, yMax: cal.yMax)
         emitter.setMapping(m)
         try? cal.save()
     })
-    // Touch coords (0..15360 x 0..8640) map to the Cintiq display for tap-to-click position.
-    touchGesture.tapMapping = DisplayMapping(
-        targetBounds: cintiqDisplayBounds(),
-        xMin: 0, xMax: Double(profile.touch.xLogicalMax),
-        yMin: 0, yMax: Double(profile.touch.yLogicalMax))
-    var transport: HIDTransport!
-    transport = HIDTransport(
-        vendorID: profile.vendorID, productID: profile.penPID,
-        onAttach: {
-            FileHandle.standardError.write("nib: pen attached\n".data(using: .utf8)!)
-            enableNativeMode(transport)
-        },
-        onReport: { reportID, payload in
-            guard reportID == profile.pen.reportID, let s = PenReport.parse(payload, profile.pen) else { return }
+
+    // DeviceManager owns the pen/touch transports and re-resolves the profile on hotplug,
+    // so plugging in a supported tablet later (or swapping models) just works.
+    let manager = DeviceManager(handlers: .init(
+        onPen: { s in
             if calibration.isActive { calibration.feed(s); return }   // capture instead of emit
             emitter.handle(s)
-            touchGesture.setPenInProximity(s.inRange)   // palm rejection gating
-        })
-    transport.start()
-
-    // Touch: enable the sensor and drive 2-finger scroll (respecting the engine's enabled flag).
-    var touch: HIDTransport!
-    touch = HIDTransport(
-        vendorID: profile.vendorID, productID: profile.touchPID,
-        onAttach: {
-            FileHandle.standardError.write("nib: touch attached\n".data(using: .utf8)!)
-            enableTouch(touch)
+            touchGesture.setPenInProximity(s.inRange)                 // palm rejection gating
         },
-        onReport: { reportID, payload in
-            guard !calibration.isActive else { return }   // ignore touch during calibration
-            guard reportID == profile.touch.reportID, let f = TouchReport.parse(payload, profile.touch) else { return }
+        onTouch: { f in
+            guard !calibration.isActive else { return }               // ignore touch during calibration
             touchGesture.handle(f)
-        })
-    touch.start()
+        },
+        onProfileChange: { p in
+            if let p = p {
+                activeProfile = p
+                log("now driving \(p.name)")
+                rebuildMappings(for: p)
+            } else {
+                log("no supported tablet connected")
+            }
+        },
+        onEnableResult: { iface, results in
+            let ok = results.allSatisfy { $0 }
+            log("\(iface)-enable \(ok ? "ok" : "FAILED \(results)")")
+        }))
+    manager.start()
 
     FileHandle.standardError.write("nib: running (needs Accessibility/Input-Monitoring permission)\n".data(using: .utf8)!)
     // Menu-bar agent: status item applies config live to the engines. NSApplication.run()
     // drives the main run loop, which the HID transports are scheduled on.
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
-    let statusBar = StatusBarController(config: config, emitter: emitter, touch: touchGesture, calibration: calibration)
+    let statusBar = StatusBarController(config: config, emitter: emitter, touch: touchGesture,
+                                        calibration: calibration,
+                                        calibrationBounds: { cintiqDisplayBounds(activeProfile) })
     _ = statusBar   // retained for the process lifetime
     app.run()
 
