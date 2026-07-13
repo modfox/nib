@@ -22,6 +22,18 @@ func detectProfile() -> DeviceProfile {
 let args = CommandLine.arguments
 let mode = args.count > 1 ? args[1] : "run"
 
+// The tablet's own display often re-registers with the window server *after* its HID
+// interface re-attaches (e.g. on replug), so a mapping computed at attach time can land
+// on the wrong screen. Rebuild mappings whenever the display configuration settles.
+var onDisplayReconfigured: (() -> Void)?
+func displayReconfigCallback(_ display: CGDirectDisplayID,
+                             _ flags: CGDisplayChangeSummaryFlags,
+                             _ userInfo: UnsafeMutableRawPointer?) {
+    // Fires with .beginConfigurationFlag before the change and again after; act on "after".
+    if flags.contains(.beginConfigurationFlag) { return }
+    onDisplayReconfigured?()
+}
+
 /// Locate the tablet's own display so the pen maps 1:1 onto the tablet surface.
 /// Match on the profile's native panel resolution; fall back to the main display.
 func cintiqDisplayBounds(_ profile: DeviceProfile) -> CGRect {
@@ -235,6 +247,11 @@ case "run":
             log("\(iface)-enable \(ok ? "ok" : "FAILED \(results)")")
         }))
     manager.start()
+
+    // Re-map when displays change — notably when the tablet's panel appears a beat after
+    // its HID interface on replug (otherwise the pen lands on the fallback display).
+    onDisplayReconfigured = { rebuildMappings(for: activeProfile) }
+    CGDisplayRegisterReconfigurationCallback(displayReconfigCallback, nil)
 
     FileHandle.standardError.write("nib: running (needs Accessibility/Input-Monitoring permission)\n".data(using: .utf8)!)
     // Menu-bar agent: status item applies config live to the engines. NSApplication.run()
