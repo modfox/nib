@@ -1,8 +1,8 @@
 import Foundation
 
-/// User-configurable driver settings, persisted to ~/.config/wacomdriver/config.json.
+/// User-configurable driver settings, persisted to ~/.config/nib/config.json.
 /// All fields have defaults and decoding tolerates missing keys (forward-compatible).
-public struct WacomConfig: Codable, Sendable, Equatable {
+public struct NibConfig: Codable, Sendable, Equatable {
     public var touchEnabled: Bool = true
     public var palmRejection: Bool = true
     public var tapToClick: Bool = true
@@ -18,7 +18,7 @@ public struct WacomConfig: Codable, Sendable, Equatable {
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        var def = WacomConfig()
+        var def = NibConfig()
         touchEnabled     = try c.decodeIfPresent(Bool.self, forKey: .touchEnabled) ?? def.touchEnabled
         palmRejection    = try c.decodeIfPresent(Bool.self, forKey: .palmRejection) ?? def.palmRejection
         tapToClick       = try c.decodeIfPresent(Bool.self, forKey: .tapToClick) ?? def.tapToClick
@@ -33,20 +33,20 @@ public struct WacomConfig: Codable, Sendable, Equatable {
 
     public static var fileURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/wacomdriver/config.json")
+            .appendingPathComponent(".config/nib/config.json")
     }
 
-    public static func load() -> WacomConfig {
+    public static func load() -> NibConfig {
         guard let data = try? Data(contentsOf: fileURL),
-              let cfg = try? JSONDecoder().decode(WacomConfig.self, from: data)
-        else { return WacomConfig() }
+              let cfg = try? JSONDecoder().decode(NibConfig.self, from: data)
+        else { return NibConfig() }
         return cfg
     }
 
     public func save() throws {
         try FileManager.default.createDirectory(
-            at: WacomConfig.fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            at: NibConfig.fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         let enc = JSONEncoder(); enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try enc.encode(self).write(to: WacomConfig.fileURL)
+        try enc.encode(self).write(to: NibConfig.fileURL)
     }
 }

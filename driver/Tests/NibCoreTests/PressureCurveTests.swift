@@ -1,5 +1,5 @@
 import XCTest
-@testable import WacomDriverCore
+@testable import NibCore
 
 final class PressureCurveTests: XCTestCase {
     func testLinearIsIdentity() {

@@ -2,16 +2,16 @@
 import PackageDescription
 
 let package = Package(
-    name: "WacomDTH2420Driver",
+    name: "Nib",
     platforms: [.macOS(.v13)],
     products: [
-        .executable(name: "wacomdriver", targets: ["wacomdriver"]),
-        .library(name: "WacomDriverCore", targets: ["WacomDriverCore"]),
+        .executable(name: "nib", targets: ["nib"]),
+        .library(name: "NibCore", targets: ["NibCore"]),
     ],
     targets: [
         // C shim over IOHIDManager (device open + raw input report delivery).
         .target(
-            name: "CWacomHID",
+            name: "CNibHID",
             linkerSettings: [
                 .linkedFramework("IOKit"),
                 .linkedFramework("CoreFoundation"),
@@ -19,11 +19,11 @@ let package = Package(
         ),
         // Pure-Swift protocol logic: report parsing + event mapping.
         // Kept dependency-free so it is unit-testable without hardware.
-        .target(name: "WacomDriverCore", dependencies: ["CWacomHID"]),
+        .target(name: "NibCore", dependencies: ["CNibHID"]),
         // The daemon: wires HID transport -> parser -> CGEvent emitter.
         .executableTarget(
-            name: "wacomdriver",
-            dependencies: ["WacomDriverCore", "CWacomHID"],
+            name: "nib",
+            dependencies: ["NibCore", "CNibHID"],
             // Single-threaded AppKit agent (everything on the main run loop); use the
             // Swift 5 language mode to avoid false-positive strict-concurrency errors.
             swiftSettings: [.swiftLanguageMode(.v5)],
@@ -33,6 +33,6 @@ let package = Package(
                 .linkedFramework("AppKit"),
             ]
         ),
-        .testTarget(name: "WacomDriverCoreTests", dependencies: ["WacomDriverCore"]),
+        .testTarget(name: "NibCoreTests", dependencies: ["NibCore"]),
     ]
 )

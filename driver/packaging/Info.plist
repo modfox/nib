@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key>
-    <string>wacomdriver</string>
+    <string>nib</string>
     <key>CFBundleIdentifier</key>
-    <string>com.modfox.wacomdriver</string>
+    <string>com.modfox.nib</string>
     <key>CFBundleName</key>
-    <string>WacomDTH2420Driver</string>
+    <string>Nib</string>
     <key>CFBundleDisplayName</key>
-    <string>Wacom DTH2420 Driver</string>
+    <string>Nib</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>

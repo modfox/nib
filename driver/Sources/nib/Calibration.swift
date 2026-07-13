@@ -1,6 +1,6 @@
 import AppKit
 import SwiftUI
-import WacomDriverCore
+import NibCore
 
 /// Drives an in-app two-point pen calibration: a full-screen overlay on the Cintiq
 /// shows crosshair targets; the user taps each with the pen; we capture the raw pen

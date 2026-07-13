@@ -1,16 +1,16 @@
-#include "CWacomHID.h"
+#include "CNibHID.h"
 #include <IOKit/hid/IOHIDManager.h>
 #include <IOKit/hid/IOHIDDevice.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <stdlib.h>
 #include <string.h>
 
-struct WacomHIDContext {
+struct NibHIDContext {
     IOHIDManagerRef manager;
     IOHIDDeviceRef  device;        // first matched device
     uint16_t vendorID, productID;
-    WacomHIDReportCallback onReport;
-    WacomHIDDeviceCallback onAttach, onDetach;
+    NibHIDReportCallback onReport;
+    NibHIDDeviceCallback onAttach, onDetach;
     void *userContext;
     uint8_t inputBuffer[64];
 };
@@ -19,14 +19,14 @@ static void inputReportCB(void *context, IOReturn result, void *sender,
                           IOHIDReportType type, uint32_t reportID,
                           uint8_t *report, CFIndex reportLength) {
     (void)result; (void)sender; (void)type;
-    WacomHIDContext *ctx = (WacomHIDContext *)context;
+    NibHIDContext *ctx = (NibHIDContext *)context;
     if (ctx->onReport)
         ctx->onReport(ctx->userContext, reportID, report, (size_t)reportLength);
 }
 
 static void matchCB(void *context, IOReturn result, void *sender, IOHIDDeviceRef dev) {
     (void)result; (void)sender;
-    WacomHIDContext *ctx = (WacomHIDContext *)context;
+    NibHIDContext *ctx = (NibHIDContext *)context;
     if (!ctx->device) ctx->device = dev;
     IOHIDDeviceRegisterInputReportCallback(dev, ctx->inputBuffer,
                                            sizeof(ctx->inputBuffer),
@@ -36,7 +36,7 @@ static void matchCB(void *context, IOReturn result, void *sender, IOHIDDeviceRef
 
 static void removalCB(void *context, IOReturn result, void *sender, IOHIDDeviceRef dev) {
     (void)result; (void)sender; (void)dev;
-    WacomHIDContext *ctx = (WacomHIDContext *)context;
+    NibHIDContext *ctx = (NibHIDContext *)context;
     if (ctx->device == dev) ctx->device = NULL;
     if (ctx->onDetach) ctx->onDetach(ctx->userContext, ctx->vendorID, ctx->productID);
 }
@@ -58,12 +58,12 @@ static CFDictionaryRef makeMatch(uint16_t vid, uint16_t pid) {
     return d;
 }
 
-WacomHIDContext *wacom_hid_create(uint16_t vendorID, uint16_t productID,
-                                  WacomHIDReportCallback onReport,
-                                  WacomHIDDeviceCallback onAttach,
-                                  WacomHIDDeviceCallback onDetach,
+NibHIDContext *nib_hid_create(uint16_t vendorID, uint16_t productID,
+                                  NibHIDReportCallback onReport,
+                                  NibHIDDeviceCallback onAttach,
+                                  NibHIDDeviceCallback onDetach,
                                   void *userContext) {
-    WacomHIDContext *ctx = calloc(1, sizeof(*ctx));
+    NibHIDContext *ctx = calloc(1, sizeof(*ctx));
     ctx->vendorID = vendorID; ctx->productID = productID;
     ctx->onReport = onReport; ctx->onAttach = onAttach; ctx->onDetach = onDetach;
     ctx->userContext = userContext;
@@ -76,7 +76,7 @@ WacomHIDContext *wacom_hid_create(uint16_t vendorID, uint16_t productID,
     return ctx;
 }
 
-int wacom_hid_send_feature(WacomHIDContext *ctx, uint32_t reportID,
+int nib_hid_send_feature(NibHIDContext *ctx, uint32_t reportID,
                            const uint8_t *data, size_t length) {
     if (!ctx->device) return -1;
     IOReturn r = IOHIDDeviceSetReport(ctx->device, kIOHIDReportTypeFeature,
@@ -84,7 +84,7 @@ int wacom_hid_send_feature(WacomHIDContext *ctx, uint32_t reportID,
     return (r == kIOReturnSuccess) ? 0 : (int)r;
 }
 
-int wacom_hid_send_output(WacomHIDContext *ctx, uint32_t reportID,
+int nib_hid_send_output(NibHIDContext *ctx, uint32_t reportID,
                           const uint8_t *data, size_t length) {
     if (!ctx->device) return -1;
     IOReturn r = IOHIDDeviceSetReport(ctx->device, kIOHIDReportTypeOutput,
@@ -92,24 +92,24 @@ int wacom_hid_send_output(WacomHIDContext *ctx, uint32_t reportID,
     return (r == kIOReturnSuccess) ? 0 : (int)r;
 }
 
-int wacom_hid_start(WacomHIDContext *ctx) {
+int nib_hid_start(NibHIDContext *ctx) {
     IOHIDManagerScheduleWithRunLoop(ctx->manager, CFRunLoopGetCurrent(),
                                     kCFRunLoopDefaultMode);
     IOReturn r = IOHIDManagerOpen(ctx->manager, kIOHIDOptionsTypeNone);
     return (r == kIOReturnSuccess) ? 0 : (int)r;
 }
 
-void wacom_hid_run_blocking(WacomHIDContext *ctx) {
-    if (wacom_hid_start(ctx) == 0) CFRunLoopRun();
+void nib_hid_run_blocking(NibHIDContext *ctx) {
+    if (nib_hid_start(ctx) == 0) CFRunLoopRun();
 }
 
-void wacom_hid_stop(WacomHIDContext *ctx) {
+void nib_hid_stop(NibHIDContext *ctx) {
     IOHIDManagerUnscheduleFromRunLoop(ctx->manager, CFRunLoopGetCurrent(),
                                       kCFRunLoopDefaultMode);
     IOHIDManagerClose(ctx->manager, kIOHIDOptionsTypeNone);
 }
 
-void wacom_hid_free(WacomHIDContext *ctx) {
+void nib_hid_free(NibHIDContext *ctx) {
     if (!ctx) return;
     if (ctx->manager) CFRelease(ctx->manager);
     free(ctx);

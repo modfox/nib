@@ -1,7 +1,7 @@
 import Foundation
-import CWacomHID
+import CNibHID
 
-/// Swift wrapper over the CWacomHID shim: opens a Wacom HID interface and delivers
+/// Swift wrapper over the CNibHID shim: opens a tablet HID interface and delivers
 /// raw input reports to a closure. All protocol decoding happens in Swift.
 public final class HIDTransport {
     public typealias ReportHandler = (_ reportID: UInt32, _ payload: [UInt8]) -> Void
@@ -25,7 +25,7 @@ public final class HIDTransport {
     /// Call CFRunLoopRun() / dispatchMain() afterwards to receive reports.
     public func start() {
         let selfPtr = Unmanaged.passRetained(self).toOpaque()
-        ctx = wacom_hid_create(
+        ctx = nib_hid_create(
             vendorID, productID,
             { userCtx, reportID, report, length in
                 guard let userCtx, let report else { return }
@@ -41,7 +41,7 @@ public final class HIDTransport {
             nil,
             selfPtr
         )
-        wacom_hid_start(ctx)
+        nib_hid_start(ctx)
     }
 
     /// Send a feature report (the pen mode-switch / config channel).
@@ -49,7 +49,7 @@ public final class HIDTransport {
     public func sendFeature(reportID: UInt32, _ bytes: [UInt8]) -> Bool {
         guard let ctx else { return false }
         return bytes.withUnsafeBufferPointer {
-            wacom_hid_send_feature(ctx, reportID, $0.baseAddress, $0.count) == 0
+            nib_hid_send_feature(ctx, reportID, $0.baseAddress, $0.count) == 0
         }
     }
 
@@ -58,12 +58,12 @@ public final class HIDTransport {
     public func sendOutput(reportID: UInt32, _ bytes: [UInt8]) -> Bool {
         guard let ctx else { return false }
         return bytes.withUnsafeBufferPointer {
-            wacom_hid_send_output(ctx, reportID, $0.baseAddress, $0.count) == 0
+            nib_hid_send_output(ctx, reportID, $0.baseAddress, $0.count) == 0
         }
     }
 
     public func stop() {
-        if let ctx { wacom_hid_stop(ctx); wacom_hid_free(ctx) }
+        if let ctx { nib_hid_stop(ctx); nib_hid_free(ctx) }
         ctx = nil
     }
 }

@@ -2,10 +2,10 @@ import Foundation
 import CoreGraphics
 import ApplicationServices
 import AppKit
-import WacomDriverCore
+import NibCore
 
 // DTH2420k0 confirmed USB identity (from live HID enumeration).
-let WACOM_VID: UInt16 = 0x056a
+let VENDOR_ID: UInt16 = 0x056a
 let PEN_PID:   UInt16 = 0x0351
 let TOUCH_PID: UInt16 = 0x0355
 
@@ -25,23 +25,23 @@ func cintiqDisplayBounds() -> CGRect {
         guard let mode = CGDisplayCopyDisplayMode(id) else { continue }
         if mode.pixelWidth == 3840 && mode.pixelHeight == 2160 {
             let b = CGDisplayBounds(id)
-            FileHandle.standardError.write("wacomdriver: mapping to Cintiq display id=\(id) bounds=\(b)\n".data(using: .utf8)!)
+            FileHandle.standardError.write("nib: mapping to Cintiq display id=\(id) bounds=\(b)\n".data(using: .utf8)!)
             return b
         }
     }
-    FileHandle.standardError.write("wacomdriver: Cintiq display not found, using main display\n".data(using: .utf8)!)
+    FileHandle.standardError.write("nib: Cintiq display not found, using main display\n".data(using: .utf8)!)
     return CGDisplayBounds(CGMainDisplayID())
 }
 
 // Mode-switch recovered from CGD16GraphicsTablet::DeviceStart (see
 // recon/decompile-CDTH2420.md). Buffers include the report-ID byte as data[0].
-//   FEATURE 0x02 = [02 02] -> native high-res Wacom mode (report 0x10, 8192 pressure)
+//   FEATURE 0x02 = [02 02] -> native high-res tablet mode (report 0x10, 8192 pressure)
 //   FEATURE 0x04 = [04 00] -> data-rate mode
 func enableNativeMode(_ t: HIDTransport) {
     let okMode = t.sendFeature(reportID: 0x02, [0x02, 0x02])
     let okRate = t.sendFeature(reportID: 0x04, [0x04, 0x00])
     FileHandle.standardError.write(
-        "wacomdriver: mode-switch sent (0x02=\(okMode ? "ok" : "FAIL"), 0x04=\(okRate ? "ok" : "FAIL"))\n"
+        "nib: mode-switch sent (0x02=\(okMode ? "ok" : "FAIL"), 0x04=\(okRate ? "ok" : "FAIL"))\n"
             .data(using: .utf8)!)
 }
 
@@ -58,17 +58,17 @@ func enableTouch(_ t: HIDTransport) {
     let okMT  = t.sendOutput(reportID: 0x06, buf(0x06, 0x02))
     let okCfg = t.sendOutput(reportID: 0x06, buf(0x01, 0x03))
     FileHandle.standardError.write(
-        "wacomdriver: touch-enable sent (multitouch=\(okMT ? "ok" : "FAIL"), configure=\(okCfg ? "ok" : "FAIL"))\n"
+        "nib: touch-enable sent (multitouch=\(okMT ? "ok" : "FAIL"), configure=\(okCfg ? "ok" : "FAIL"))\n"
             .data(using: .utf8)!)
 }
 
 switch mode {
 case "log":
     // Confirm report-0x10 field offsets against real gestures.
-    FileHandle.standardError.write("wacomdriver: logging pen reports (Ctrl-C to stop)\n".data(using: .utf8)!)
+    FileHandle.standardError.write("nib: logging pen reports (Ctrl-C to stop)\n".data(using: .utf8)!)
     var transport: HIDTransport!
     transport = HIDTransport(
-        vendorID: WACOM_VID, productID: PEN_PID,
+        vendorID: VENDOR_ID, productID: PEN_PID,
         onAttach: { enableNativeMode(transport) },
         onReport: { reportID, payload in
             guard reportID == PenReport.reportID, let s = PenReport.parse(payload) else { return }
@@ -83,12 +83,12 @@ case "log":
 
 case "touchlog":
     // Raw-hex dump of the touch interface (PID 0x0355) to decode the finger report layout.
-    FileHandle.standardError.write("wacomdriver: logging TOUCH reports (Ctrl-C to stop)\n".data(using: .utf8)!)
+    FileHandle.standardError.write("nib: logging TOUCH reports (Ctrl-C to stop)\n".data(using: .utf8)!)
     var touchT: HIDTransport!
     touchT = HIDTransport(
-        vendorID: WACOM_VID, productID: TOUCH_PID,
+        vendorID: VENDOR_ID, productID: TOUCH_PID,
         onAttach: {
-            FileHandle.standardError.write("wacomdriver: TOUCH device opened; sending enable…\n".data(using: .utf8)!)
+            FileHandle.standardError.write("nib: TOUCH device opened; sending enable…\n".data(using: .utf8)!)
             enableTouch(touchT)
         },
         onReport: { reportID, payload in
@@ -128,24 +128,24 @@ case "calibrate":
         let cal = Calibration(
             xMin: (Double(bounds.minX) - ox) / sx, xMax: (Double(bounds.maxX) - ox) / sx,
             yMin: (Double(bounds.minY) - oy) / sy, yMax: (Double(bounds.maxY) - oy) / sy)
-        do { try cal.save(); cerr("wacomdriver: calibration saved to \(Calibration.fileURL.path)") }
-        catch { cerr("wacomdriver: save failed: \(error)") }
-        cerr(String(format: "wacomdriver: active raw range X[%.0f..%.0f] Y[%.0f..%.0f]",
+        do { try cal.save(); cerr("nib: calibration saved to \(Calibration.fileURL.path)") }
+        catch { cerr("nib: save failed: \(error)") }
+        cerr(String(format: "nib: active raw range X[%.0f..%.0f] Y[%.0f..%.0f]",
                     cal.xMin, cal.xMax, cal.yMin, cal.yMax))
         exit(0)
     }
 
     CGWarpMouseCursorPosition(p1)
-    cerr("wacomdriver: CALIBRATION — place the pen tip exactly on the cursor dot (upper-left area) and hold still…")
+    cerr("nib: CALIBRATION — place the pen tip exactly on the cursor dot (upper-left area) and hold still…")
     var calTransport: HIDTransport!
     calTransport = HIDTransport(
-        vendorID: WACOM_VID, productID: PEN_PID,
+        vendorID: VENDOR_ID, productID: PEN_PID,
         onAttach: { enableNativeMode(calTransport) },
         onReport: { reportID, payload in
             guard reportID == PenReport.reportID, let s = PenReport.parse(payload) else { return }
             if !s.tipDown || !s.inRange {
                 if state == 1 { state = 2; CGWarpMouseCursorPosition(p2)
-                    cerr("wacomdriver: point 1 captured. Now align the pen to the cursor (lower-right area) and hold…") }
+                    cerr("nib: point 1 captured. Now align the pen to the cursor (lower-right area) and hold…") }
                 buf.removeAll(); return
             }
             guard state == 0 || state == 2 else { buf.removeAll(); return }
@@ -153,7 +153,7 @@ case "calibrate":
             if buf.count == K && stable(buf) {
                 let m = mean(buf)
                 if state == 0 { rawP1 = m; state = 1; buf.removeAll()
-                    cerr("wacomdriver: got point 1 raw=(\(Int(m.0)),\(Int(m.1))). Lift the pen.") }
+                    cerr("nib: got point 1 raw=(\(Int(m.0)),\(Int(m.1))). Lift the pen.") }
                 else { finish(m) }
             }
         })
@@ -166,18 +166,18 @@ case "run":
     // Key value equals kAXTrustedCheckOptionPrompt; use the literal to stay Swift-6 safe.
     let opts = ["AXTrustedCheckOptionPrompt" as CFString: true] as CFDictionary
     let trusted = AXIsProcessTrustedWithOptions(opts)
-    FileHandle.standardError.write("wacomdriver: Accessibility trusted = \(trusted)\n".data(using: .utf8)!)
+    FileHandle.standardError.write("nib: Accessibility trusted = \(trusted)\n".data(using: .utf8)!)
     if !trusted {
-        FileHandle.standardError.write("wacomdriver: NOT trusted — events will be dropped. Grant this binary Accessibility in System Settings, then relaunch.\n".data(using: .utf8)!)
+        FileHandle.standardError.write("nib: NOT trusted — events will be dropped. Grant this binary Accessibility in System Settings, then relaunch.\n".data(using: .utf8)!)
     }
     var mapping = DisplayMapping(targetBounds: cintiqDisplayBounds())
     if let cal = Calibration.load() {
         cal.apply(to: &mapping)
-        FileHandle.standardError.write("wacomdriver: loaded calibration \(Calibration.fileURL.path)\n".data(using: .utf8)!)
+        FileHandle.standardError.write("nib: loaded calibration \(Calibration.fileURL.path)\n".data(using: .utf8)!)
     } else {
-        FileHandle.standardError.write("wacomdriver: no calibration found, using full pen range\n".data(using: .utf8)!)
+        FileHandle.standardError.write("nib: no calibration found, using full pen range\n".data(using: .utf8)!)
     }
-    let config = WacomConfig.load()
+    let config = NibConfig.load()
     let emitter = EventEmitter(mapping: mapping)
     let touchGesture = TouchGestureEngine()
     // In-app calibration: captures raw pen coords at two on-screen targets, then applies.
@@ -194,9 +194,9 @@ case "run":
         yMin: 0, yMax: Double(TouchContact.yLogicalMax))
     var transport: HIDTransport!
     transport = HIDTransport(
-        vendorID: WACOM_VID, productID: PEN_PID,
+        vendorID: VENDOR_ID, productID: PEN_PID,
         onAttach: {
-            FileHandle.standardError.write("wacomdriver: pen attached\n".data(using: .utf8)!)
+            FileHandle.standardError.write("nib: pen attached\n".data(using: .utf8)!)
             enableNativeMode(transport)
         },
         onReport: { reportID, payload in
@@ -210,9 +210,9 @@ case "run":
     // Touch: enable the sensor and drive 2-finger scroll (respecting the engine's enabled flag).
     var touch: HIDTransport!
     touch = HIDTransport(
-        vendorID: WACOM_VID, productID: TOUCH_PID,
+        vendorID: VENDOR_ID, productID: TOUCH_PID,
         onAttach: {
-            FileHandle.standardError.write("wacomdriver: touch attached\n".data(using: .utf8)!)
+            FileHandle.standardError.write("nib: touch attached\n".data(using: .utf8)!)
             enableTouch(touch)
         },
         onReport: { reportID, payload in
@@ -222,7 +222,7 @@ case "run":
         })
     touch.start()
 
-    FileHandle.standardError.write("wacomdriver: running (needs Accessibility/Input-Monitoring permission)\n".data(using: .utf8)!)
+    FileHandle.standardError.write("nib: running (needs Accessibility/Input-Monitoring permission)\n".data(using: .utf8)!)
     // Menu-bar agent: status item applies config live to the engines. NSApplication.run()
     // drives the main run loop, which the HID transports are scheduled on.
     let app = NSApplication.shared
@@ -232,6 +232,6 @@ case "run":
     app.run()
 
 default:
-    FileHandle.standardError.write("usage: wacomdriver [run|log|calibrate]\n".data(using: .utf8)!)
+    FileHandle.standardError.write("usage: nib [run|log|calibrate]\n".data(using: .utf8)!)
     exit(2)
 }

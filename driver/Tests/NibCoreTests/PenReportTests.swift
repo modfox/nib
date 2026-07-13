@@ -1,6 +1,6 @@
 import XCTest
 import CoreGraphics
-@testable import WacomDriverCore
+@testable import NibCore
 
 final class PenReportTests: XCTestCase {
     // Helper: parse a space-separated hex string (a real captured report line).

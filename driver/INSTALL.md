@@ -15,53 +15,53 @@ name `modfox-codesign`, Identity Type **Self Signed Root**, Certificate Type **C
 Then sign with `codesign -s modfox-codesign …` (self-signed/untrusted is fine for local TCC).
 
 ## Layout (as installed)
-- App bundle: `~/Applications/WacomDTH2420Driver.app` (executable at `Contents/MacOS/wacomdriver`)
-- LaunchAgent: `~/Library/LaunchAgents/com.modfox.wacomdriver.plist` (`run` at load, KeepAlive)
-- Logs: `~/Library/Logs/wacomdriver.log`
-- Calibration: `~/.config/wacomdriver/calibration.json`
+- App bundle: `~/Applications/Nib.app` (executable at `Contents/MacOS/nib`)
+- LaunchAgent: `~/Library/LaunchAgents/com.modfox.nib.plist` (`run` at load, KeepAlive)
+- Logs: `~/Library/Logs/nib.log`
+- Calibration: `~/.config/nib/calibration.json`
 
 ## Build + install / update
 ```
 cd driver
 swift build -c release
-APP="$HOME/Applications/WacomDTH2420Driver.app"
+APP="$HOME/Applications/Nib.app"
 mkdir -p "$APP/Contents/MacOS"
-cp .build/release/wacomdriver "$APP/Contents/MacOS/wacomdriver"
+cp .build/release/nib "$APP/Contents/MacOS/nib"
 # Info.plist is committed under packaging/ — copy it if recreating the bundle.
-codesign -s modfox-codesign --force --deep --identifier com.modfox.wacomdriver "$APP"
-launchctl kickstart -k gui/$(id -u)/com.modfox.wacomdriver   # if already loaded
+codesign -s modfox-codesign --force --deep --identifier com.modfox.nib "$APP"
+launchctl kickstart -k gui/$(id -u)/com.modfox.nib   # if already loaded
 ```
 Signing with the stable `modfox-codesign` identity keeps the TCC grants across rebuilds —
 verified: re-sign + reload leaves `Accessibility trusted = true` with no re-granting.
 
 ## First-time setup
-1. Disable the (non-functional-on-this-macOS) stock Wacom driver permanently:
+1. Disable the (non-functional-on-this-macOS) stock vendor driver permanently:
    ```
    launchctl bootout  gui/$(id -u)/com.wacom.wacomtablet 2>/dev/null
    launchctl bootout  gui/$(id -u)/Wacom_IOManager 2>/dev/null
    launchctl disable  gui/$(id -u)/com.wacom.wacomtablet
    launchctl disable  gui/$(id -u)/Wacom_IOManager
    ```
-2. Load our agent: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.modfox.wacomdriver.plist`
-3. Grant **WacomDTH2420Driver.app** in System Settings › Privacy & Security:
+2. Load our agent: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.modfox.nib.plist`
+3. Grant **Nib.app** in System Settings › Privacy & Security:
    - **Input Monitoring** (read pen HID + send mode-switch)
    - **Accessibility** (post cursor/pressure events)
    Then reload: `launchctl bootout … && launchctl bootstrap …` (or kickstart -k).
-4. Verify: `tail -f ~/Library/Logs/wacomdriver.log` should show
+4. Verify: `tail -f ~/Library/Logs/nib.log` should show
    `Accessibility trusted = true` and `mode-switch sent (0x02=ok, 0x04=ok)`.
 
 ## Calibrate
 ```
-launchctl bootout gui/$(id -u)/com.modfox.wacomdriver   # stop the running agent
-~/Applications/WacomDTH2420Driver.app/Contents/MacOS/wacomdriver calibrate
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.modfox.wacomdriver.plist
+launchctl bootout gui/$(id -u)/com.modfox.nib   # stop the running agent
+~/Applications/Nib.app/Contents/MacOS/nib calibrate
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.modfox.nib.plist
 ```
 
 ## Uninstall / revert to nothing
 ```
-launchctl bootout gui/$(id -u)/com.modfox.wacomdriver
-rm ~/Library/LaunchAgents/com.modfox.wacomdriver.plist
-rm -rf ~/Applications/WacomDTH2420Driver.app
+launchctl bootout gui/$(id -u)/com.modfox.nib
+rm ~/Library/LaunchAgents/com.modfox.nib.plist
+rm -rf ~/Applications/Nib.app
 ```
 
 ## TODO for a distributable build

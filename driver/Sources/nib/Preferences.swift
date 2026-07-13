@@ -1,16 +1,16 @@
 import SwiftUI
 import AppKit
-import WacomDriverCore
+import NibCore
 
 /// Backing model for the preferences window — holds the whole config. Edits flow back
 /// to the driver via callbacks: `onLive` applies to the engines, `onCommit` also saves.
 final class PrefsModel: ObservableObject {
-    @Published var config: WacomConfig
+    @Published var config: NibConfig
     @Published var livePressure: Double = 0
-    var onLive: ((WacomConfig) -> Void)?
-    var onCommit: ((WacomConfig) -> Void)?
+    var onLive: ((NibConfig) -> Void)?
+    var onCommit: ((NibConfig) -> Void)?
 
-    init(config: WacomConfig) { self.config = config }
+    init(config: NibConfig) { self.config = config }
 
     func live() { onLive?(config) }                        // apply, no save (during a drag)
     func commit() { onLive?(config); onCommit?(config) }    // apply + save
@@ -27,7 +27,7 @@ struct PreferencesView: View {
         .init(x: 0.5, y: 0.28), .init(x: 0.75, y: 0.55), .init(x: 1, y: 1)])
 
     /// Binding to a config field that applies + saves on change.
-    private func bind<T>(_ kp: WritableKeyPath<WacomConfig, T>) -> Binding<T> {
+    private func bind<T>(_ kp: WritableKeyPath<NibConfig, T>) -> Binding<T> {
         Binding(get: { model.config[keyPath: kp] },
                 set: { model.config[keyPath: kp] = $0; model.commit() })
     }
@@ -169,7 +169,7 @@ final class PreferencesWindowController {
         if window == nil {
             let hosting = NSHostingController(rootView: PreferencesView(model: model, onRecalibrate: onRecalibrate))
             let w = NSWindow(contentViewController: hosting)
-            w.title = "Wacom Driver Preferences"
+            w.title = "Nib Preferences"
             w.styleMask = [.titled, .closable]
             w.isReleasedWhenClosed = false
             window = w

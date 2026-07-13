@@ -1,10 +1,10 @@
 import AppKit
-import WacomDriverCore
+import NibCore
 
 /// Menu-bar UI for the driver: a status item whose menu toggles touch and other
 /// settings. Applies changes live to the running engines and persists the config.
 final class StatusBarController: NSObject, NSMenuDelegate {
-    private var config: WacomConfig
+    private var config: NibConfig
     private let emitter: EventEmitter
     private let touch: TouchGestureEngine
     private let item: NSStatusItem
@@ -14,7 +14,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     private static let speeds: [(String, Double)] = [("Slow", 0.20), ("Medium", 0.35), ("Fast", 0.55)]
 
-    init(config: WacomConfig, emitter: EventEmitter, touch: TouchGestureEngine, calibration: CalibrationController) {
+    init(config: NibConfig, emitter: EventEmitter, touch: TouchGestureEngine, calibration: CalibrationController) {
         self.config = config
         self.emitter = emitter
         self.touch = touch
@@ -25,7 +25,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
                                                  onRecalibrate: { calibration.begin(bounds: cintiqDisplayBounds()) })
         super.init()
         if let button = item.button {
-            button.image = NSImage(systemSymbolName: "hand.draw", accessibilityDescription: "Wacom Driver")
+            button.image = NSImage(systemSymbolName: "hand.draw", accessibilityDescription: "Nib")
         }
         let menu = NSMenu()
         menu.delegate = self
@@ -78,7 +78,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     // Build the menu fresh each time it opens so checkmarks reflect current state.
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        let header = NSMenuItem(title: "Wacom DTH2420 Driver", action: nil, keyEquivalent: "")
+        let header = NSMenuItem(title: "Nib", action: nil, keyEquivalent: "")
         header.isEnabled = false
         menu.addItem(header)
         menu.addItem(.separator())
@@ -154,7 +154,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     @objc private func openPrefs() { prefsModel.config = config; prefs.show() }
     @objc private func openConfig() {
         try? config.save()
-        NSWorkspace.shared.open(WacomConfig.fileURL)
+        NSWorkspace.shared.open(NibConfig.fileURL)
     }
     @objc private func recalibrate() {
         calibration.begin(bounds: cintiqDisplayBounds())

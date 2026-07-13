@@ -3,7 +3,7 @@ import CoreGraphics
 
 /// Turns decoded `PenSample`s into macOS tablet pointer events via CoreGraphics.
 ///
-/// This mirrors the injection path the stock Wacom driver uses (observed as
+/// This mirrors the injection path the stock driver uses (observed as
 /// NXTabletPointData / kCGEventTabletProximity in the binary). Posting these events
 /// requires the process to be granted Accessibility / Input-Monitoring permission.
 /// What a pen side button does. Remappable (exposed later via settings).

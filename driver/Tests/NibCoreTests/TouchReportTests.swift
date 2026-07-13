@@ -1,5 +1,5 @@
 import XCTest
-@testable import WacomDriverCore
+@testable import NibCore
 
 final class TouchReportTests: XCTestCase {
     func hex(_ s: String) -> [UInt8] { s.split(separator: " ").map { UInt8($0, radix: 16)! } }

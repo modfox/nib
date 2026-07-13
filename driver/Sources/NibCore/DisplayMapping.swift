@@ -44,7 +44,7 @@ public struct Calibration: Codable, Sendable {
 
     public static var fileURL: URL {
         let dir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/wacomdriver", isDirectory: true)
+            .appendingPathComponent(".config/nib", isDirectory: true)
         return dir.appendingPathComponent("calibration.json")
     }
 

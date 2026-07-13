@@ -3,10 +3,10 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.modfox.wacomdriver</string>
+    <string>com.modfox.nib</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/USERNAME/Applications/WacomDTH2420Driver.app/Contents/MacOS/wacomdriver</string>
+        <string>/Users/USERNAME/Applications/Nib.app/Contents/MacOS/nib</string>
         <string>run</string>
     </array>
     <key>RunAtLoad</key>
@@ -27,8 +27,8 @@
     <key>ThrottleInterval</key>
     <integer>5</integer>
     <key>StandardOutPath</key>
-    <string>/Users/USERNAME/Library/Logs/wacomdriver.log</string>
+    <string>/Users/USERNAME/Library/Logs/nib.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/USERNAME/Library/Logs/wacomdriver.log</string>
+    <string>/Users/USERNAME/Library/Logs/nib.log</string>
 </dict>
 </plist>
