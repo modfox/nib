@@ -1,0 +1,65 @@
+# wacomdriver — standalone macOS driver for the Wacom Cintiq Pro 24 Touch (DTH2420k0)
+
+A clean-room, from-scratch userspace driver. **No dependency on OpenTabletDriver or the
+stock Wacom driver.** Pen protocol was decoded from the device's own HID report descriptor
+(see `../spec/DTH2420-protocol.md`). Architecture mirrors the stock stack: read HID with
+`IOHIDManager`, decode reports in pure Swift, inject `CGEvent` tablet events.
+
+## Layout
+- `Sources/CWacomHID` — thin C shim over `IOHIDManager` (device open + raw report delivery + feature reports).
+- `Sources/WacomDriverCore` — pure-Swift, hardware-independent, unit-tested:
+  - `PenReport.swift` — decode HID report 0x10 → `PenSample` (X/Y 24-bit, pressure 0–8191, tilt ±64, buttons, serial).
+  - `DisplayMapping.swift` — tablet logical coords → screen points.
+  - `EventEmitter.swift` — `PenSample` → CGEvent tablet pointer + proximity events.
+  - `HIDTransport.swift` — Swift wrapper over the C shim.
+- `Sources/wacomdriver` — the daemon (`run` and `log` modes).
+- `Tests/` — parser + mapping unit tests (no hardware needed).
+
+## Build & test
+```
+swift build
+swift test
+```
+
+## Run
+```
+# Confirm the report layout against real gestures (prints decoded samples):
+.build/debug/wacomdriver log
+
+# Drive the cursor with pressure/tilt (needs Accessibility + Input Monitoring grants):
+.build/debug/wacomdriver run
+```
+Grant the built binary **Input Monitoring** and **Accessibility** in System Settings ›
+Privacy & Security the first time. For a clean capture, temporarily unload the stock
+Wacom agents so they don't seize the interface:
+```
+launchctl bootout gui/$(id -u)/com.wacom.wacomtablet 2>/dev/null
+# re-enable later: open "/Applications/Wacom Tablet.localized/.Tablet/WacomTabletDriver.app"
+```
+
+## Status
+- [x] USB IDs confirmed (VID 0x056a, pen PID 0x0351, touch PID 0x0355).
+- [x] Pen report 0x10 decoded + **confirmed against live raw captures**; parser unit-tested on real reports.
+- [x] **Mode-switch wired + verified live** (FEATURE 0x02=`02 02`, 0x04=`04 00`; SetReport succeeded, native mode engaged — 6.6k report-0x10 packets flowed).
+- [x] HID open + CGEvent emitter pipeline compiles and runs.
+- [x] **End-to-end `run` verified live**: cursor tracks the pen on the Cintiq, and **pressure varies
+      line thickness** in pressure-aware apps. Sets both `mouseEventPressure` (NSEvent.pressure) and
+      `tabletEventPointPressure`, with pressure/tilt advertised in the proximity capability mask.
+- [x] Detect + map to the Cintiq's own display (matches native 3840x2160 mode; maps to its bounds).
+- [x] **Calibration** — `wacomdriver calibrate` (2-point cursor-align) saves active raw range to
+      `~/.config/wacomdriver/calibration.json`; `run` loads it. Tracking confirmed spot-on live.
+      (Active range measured: X[443..105075], Y[465..59317].)
+- [x] **Persistence/packaging** — installed as `~/Applications/WacomDTH2420Driver.app` + LaunchAgent
+      `com.modfox.wacomdriver` (auto-start, KeepAlive). Stock agents permanently disabled. Requires
+      the `.app` bundle for TCC Accessibility to work. See `INSTALL.md`. Running clean, verified live.
+- [x] **Touch — raw HID** (PID 0x0355). WacomMultiTouch.framework was a dead end here
+      (`WMTErrorDriverNotFound` — depends on the broken stock daemon), so touch uses raw HID:
+      enable via two vendor OUTPUT reports (ID 0x06), parse report 0x81 (up to 10 contacts),
+      **2-finger scroll** via CGScrollWheel, direction/speed matched to the system setting.
+- [x] **Stable code signing** — signed with self-signed `modfox-codesign` identity so TCC grants
+      persist across rebuilds (verified). No more re-granting on each build.
+- [ ] Tilt verification + barrel-button bit; twist for art pens.
+- [ ] ExpressKeys / touch-ring (pen report 0x11/0x13).
+- [ ] More touch gestures (pinch-zoom needs private gesture APIs; tap-to-click).
+- [ ] Pressure-curve config + button remapping (user settings).
+- [ ] Developer ID signing + notarization (for distributing to other machines).

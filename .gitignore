@@ -1,0 +1,17 @@
+# Swift build output
+driver/.build/
+*.o
+*.swiftmodule
+
+# Compiled RE tools (source is tracked; rebuild with clang)
+captures/hidinfo
+
+# Wacom's proprietary binaries — NOT redistributed (clean-room hygiene + size).
+# Recreate locally with: lipo -thin arm64 <WacomBinary> -output recon/<name>.arm64
+recon/*.arm64
+
+# macOS
+.DS_Store
+
+# Scratch
+*.tmp
