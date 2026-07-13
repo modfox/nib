@@ -10,6 +10,18 @@ tilt, remappable side buttons), multi-touch (2-finger scroll, tap-to-click, 3-fi
 swipe, palm rejection), a menu-bar app and a full preferences window, running as a
 persistent per-user LaunchAgent.
 
+## Screenshots
+
+<p>
+  <img src="docs/screenshots/menu.png" alt="Menu-bar menu" height="360">
+  <img src="docs/screenshots/preferences.png" alt="Preferences window" height="360">
+  <img src="docs/screenshots/pressure-curve.png" alt="Pressure curve editor" height="360">
+</p>
+
+In-app calibration overlay — tap the two crosshairs with the pen:
+
+<img src="docs/screenshots/calibration.jpg" alt="Calibration overlay" width="640">
+
 ## Layout
 - `driver/` — the Swift package (`nib` executable + `NibCore` library). See
   `driver/README.md` (usage) and `driver/INSTALL.md` (persistent install + code signing).
