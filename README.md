@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/icon/icon-master-1024.png" width="140" alt="Nib icon">
+</p>
+
 # Nib
 
 **Nib** is an independent, open-source macOS driver for the **Cintiq Pro 24 Touch
