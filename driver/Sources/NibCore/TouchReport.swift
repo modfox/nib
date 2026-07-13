@@ -19,23 +19,26 @@ public struct TouchFrame: Equatable, Sendable {
 }
 
 public enum TouchReport {
-    public static let reportID: UInt32 = 0x81
-    public static let fingerRecordSize = 6  // tipswitch+pad(1) + contactID(1) + X(2) + Y(2)
+    /// HID report ID of the reference (DTH2420) multitouch report.
+    public static var reportID: UInt32 { TouchLayout.dth2420.reportID }
+    /// Bytes per finger record in the reference report.
+    public static var fingerRecordSize: Int { TouchLayout.dth2420.fingerRecordSize }
 
-    /// Parse a report-0x81 buffer (report-ID byte at index 0). Confirmed against live
-    /// 1/2/3-finger captures: 64-byte report,
+    /// Parse a multitouch report (report-ID byte at index 0) according to `layout`.
+    /// Defaults to the DTH2420 layout. Confirmed against live 1/2/3-finger captures:
+    /// 64-byte report,
     ///   [0]=id 0x81, [1..]=contactCount contiguous 6-byte finger records, empty slots 0xFF,
     ///   [61..62]=scanTime u16 LE, [63]=contactCount.
     /// Finger record: [0]=TipSwitch(bit0), [1]=ContactID, [2..3]=X LE, [4..5]=Y LE.
-    public static func parse(_ r: [UInt8]) -> TouchFrame? {
-        guard r.count >= 64, UInt32(r[0]) == reportID else { return nil }
-        let maxSlots = (r.count - 1 - 3) / fingerRecordSize   // 10 for the 64-byte report
+    public static func parse(_ r: [UInt8], _ layout: TouchLayout = .dth2420) -> TouchFrame? {
+        guard r.count >= layout.minReportLength, UInt32(r[0]) == layout.reportID else { return nil }
+        let maxSlots = (r.count - 1 - layout.trailerSize) / layout.fingerRecordSize
         let count = Int(r[r.count - 1])
         let n = min(count, maxSlots)
         var contacts: [TouchContact] = []
         contacts.reserveCapacity(n)
         for i in 0..<n {
-            let o = 1 + i * fingerRecordSize
+            let o = 1 + i * layout.fingerRecordSize
             let state = r[o]
             guard state != 0xFF else { continue }             // empty slot
             let down = (state & 0x01) != 0

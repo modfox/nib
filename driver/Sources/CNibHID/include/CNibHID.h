@@ -23,6 +23,17 @@ typedef void (*NibHIDDeviceCallback)(void *ctx, uint16_t vendorID, uint16_t prod
 
 typedef struct NibHIDContext NibHIDContext;
 
+// A connected HID device's USB identity, as returned by nib_hid_enumerate().
+typedef struct {
+    uint16_t vendorID;
+    uint16_t productID;
+} NibHIDDeviceInfo;
+
+// Enumerate currently-connected HID devices matching `vendorID` (pass 0 for any
+// vendor). Writes up to `maxOut` entries into `out`; returns the number written.
+// Synchronous — opens a throwaway manager, does not require a run loop.
+size_t nib_hid_enumerate(uint16_t vendorID, NibHIDDeviceInfo *out, size_t maxOut);
+
 // Create a manager that matches (vendorID, productID). Pass productID = 0 to
 // match any product for the vendor. Does not open until nib_hid_run().
 NibHIDContext *nib_hid_create(uint16_t vendorID, uint16_t productID,

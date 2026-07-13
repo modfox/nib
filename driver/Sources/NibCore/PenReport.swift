@@ -30,29 +30,17 @@ public struct PenSample: Equatable, Sendable {
 }
 
 public enum PenReport {
-    /// HID report ID of the high-resolution pen report.
-    public static let reportID: UInt32 = 0x10
-    /// Full report length in bytes, including the report-ID byte at index 0.
-    public static let reportLength = 27
+    /// HID report ID of the reference (DTH2420) high-resolution pen report.
+    public static var reportID: UInt32 { PenLayout.dth2420.reportID }
+    /// Full report length of the reference report, including the report-ID byte at index 0.
+    public static var reportLength: Int { PenLayout.dth2420.reportLength }
 
-    // Byte offsets into the full report buffer (index 0 = report ID). Confirmed live.
-    private enum Off {
-        static let status = 1
-        static let x = 2          // 24-bit LE
-        static let y = 5          // 24-bit LE
-        static let pressure = 8   // 16-bit LE
-        static let tiltX = 10     // int8
-        static let tiltY = 11     // int8
-        static let twist = 12     // 16-bit LE signed
-        static let distance = 16  // 8-bit
-        static let serial = 17    // 32-bit LE
-        static let toolID = 21    // 32-bit LE
-    }
-
-    /// Parse a full report-0x10 buffer (as delivered by IOHIDManager, ID byte included).
-    public static func parse(_ r: [UInt8]) -> PenSample? {
-        guard r.count >= reportLength, UInt32(r[0]) == reportID else { return nil }
-        let st = r[Off.status]
+    /// Parse a full high-resolution pen report (as delivered by IOHIDManager, ID byte
+    /// included) according to `layout`. Defaults to the DTH2420 layout.
+    public static func parse(_ r: [UInt8], _ layout: PenLayout = .dth2420) -> PenSample? {
+        let o = layout.offsets
+        guard r.count >= layout.reportLength, UInt32(r[0]) == layout.reportID else { return nil }
+        let st = r[o.status]
         return PenSample(
             tipDown:         (st & 0x01) != 0,
             barrelButton:    (st & 0x02) != 0,
@@ -60,15 +48,15 @@ public enum PenReport {
             eraser:          (st & 0x08) != 0,
             inverted:        (st & 0x10) != 0,
             inRange:         (st & 0x20) != 0,
-            x: int24LE(r, Off.x),
-            y: int24LE(r, Off.y),
-            pressure: Int(r[Off.pressure]) | (Int(r[Off.pressure + 1]) << 8),
-            tiltX: Int(Int8(bitPattern: r[Off.tiltX])),
-            tiltY: Int(Int8(bitPattern: r[Off.tiltY])),
-            twist: Int(Int16(bitPattern: UInt16(r[Off.twist]) | (UInt16(r[Off.twist + 1]) << 8))),
-            distance: Int(r[Off.distance]),
-            serial: u32LE(r, Off.serial),
-            toolID: u32LE(r, Off.toolID)
+            x: int24LE(r, o.x),
+            y: int24LE(r, o.y),
+            pressure: Int(r[o.pressure]) | (Int(r[o.pressure + 1]) << 8),
+            tiltX: Int(Int8(bitPattern: r[o.tiltX])),
+            tiltY: Int(Int8(bitPattern: r[o.tiltY])),
+            twist: Int(Int16(bitPattern: UInt16(r[o.twist]) | (UInt16(r[o.twist + 1]) << 8))),
+            distance: Int(r[o.distance]),
+            serial: u32LE(r, o.serial),
+            toolID: u32LE(r, o.toolID)
         )
     }
 

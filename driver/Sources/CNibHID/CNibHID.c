@@ -15,6 +15,15 @@ struct NibHIDContext {
     uint8_t inputBuffer[64];
 };
 
+// Read a numeric IOHIDDevice property (e.g. VendorID/ProductID). Returns 0 if absent.
+static uint16_t readDeviceID(IOHIDDeviceRef dev, CFStringRef key) {
+    CFTypeRef p = IOHIDDeviceGetProperty(dev, key);   // "get" rule: not owned, no release
+    int v = 0;
+    if (p && CFGetTypeID(p) == CFNumberGetTypeID())
+        CFNumberGetValue((CFNumberRef)p, kCFNumberIntType, &v);
+    return (uint16_t)v;
+}
+
 static void inputReportCB(void *context, IOReturn result, void *sender,
                           IOHIDReportType type, uint32_t reportID,
                           uint8_t *report, CFIndex reportLength) {
@@ -31,14 +40,19 @@ static void matchCB(void *context, IOReturn result, void *sender, IOHIDDeviceRef
     IOHIDDeviceRegisterInputReportCallback(dev, ctx->inputBuffer,
                                            sizeof(ctx->inputBuffer),
                                            inputReportCB, ctx);
-    if (ctx->onAttach) ctx->onAttach(ctx->userContext, ctx->vendorID, ctx->productID);
+    // Report the device's real IDs (the match filter may be vendor-only, productID = 0).
+    if (ctx->onAttach) ctx->onAttach(ctx->userContext,
+                                     readDeviceID(dev, CFSTR(kIOHIDVendorIDKey)),
+                                     readDeviceID(dev, CFSTR(kIOHIDProductIDKey)));
 }
 
 static void removalCB(void *context, IOReturn result, void *sender, IOHIDDeviceRef dev) {
-    (void)result; (void)sender; (void)dev;
+    (void)result; (void)sender;
     NibHIDContext *ctx = (NibHIDContext *)context;
+    uint16_t vid = readDeviceID(dev, CFSTR(kIOHIDVendorIDKey));
+    uint16_t pid = readDeviceID(dev, CFSTR(kIOHIDProductIDKey));
     if (ctx->device == dev) ctx->device = NULL;
-    if (ctx->onDetach) ctx->onDetach(ctx->userContext, ctx->vendorID, ctx->productID);
+    if (ctx->onDetach) ctx->onDetach(ctx->userContext, vid, pid);
 }
 
 static CFDictionaryRef makeMatch(uint16_t vid, uint16_t pid) {
@@ -56,6 +70,39 @@ static CFDictionaryRef makeMatch(uint16_t vid, uint16_t pid) {
         CFRelease(pn);
     }
     return d;
+}
+
+size_t nib_hid_enumerate(uint16_t vendorID, NibHIDDeviceInfo *out, size_t maxOut) {
+    if (!out || maxOut == 0) return 0;
+    IOHIDManagerRef mgr = IOHIDManagerCreate(kCFAllocatorDefault, kIOHIDOptionsTypeNone);
+    if (vendorID) {
+        CFDictionaryRef m = makeMatch(vendorID, 0);
+        IOHIDManagerSetDeviceMatching(mgr, m);
+        CFRelease(m);
+    } else {
+        IOHIDManagerSetDeviceMatching(mgr, NULL);   // match everything
+    }
+    IOHIDManagerOpen(mgr, kIOHIDOptionsTypeNone);
+    CFSetRef devices = IOHIDManagerCopyDevices(mgr);
+    size_t n = 0;
+    if (devices) {
+        CFIndex count = CFSetGetCount(devices);
+        const void **arr = calloc((size_t)count, sizeof(void *));
+        if (arr) {
+            CFSetGetValues(devices, arr);
+            for (CFIndex i = 0; i < count && n < maxOut; i++) {
+                IOHIDDeviceRef dev = (IOHIDDeviceRef)arr[i];
+                out[n].vendorID  = readDeviceID(dev, CFSTR(kIOHIDVendorIDKey));
+                out[n].productID = readDeviceID(dev, CFSTR(kIOHIDProductIDKey));
+                n++;
+            }
+            free(arr);
+        }
+        CFRelease(devices);
+    }
+    IOHIDManagerClose(mgr, kIOHIDOptionsTypeNone);
+    CFRelease(mgr);
+    return n;
 }
 
 NibHIDContext *nib_hid_create(uint16_t vendorID, uint16_t productID,

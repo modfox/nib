@@ -36,6 +36,13 @@ final class TouchReportTests: XCTestCase {
         XCTAssertEqual(f.contacts.map { $0.id }, [0, 1, 2])
     }
 
+    func testParsesViaExplicitProfileLayout() throws {
+        let r = hex("81 01 00 ec 25 aa 09 ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff 33 00 01")
+        let viaDefault = try XCTUnwrap(TouchReport.parse(r))
+        let viaProfile = try XCTUnwrap(TouchReport.parse(r, DeviceProfile.dth2420.touch))
+        XCTAssertEqual(viaDefault, viaProfile)
+    }
+
     func testRejectsWrongID() {
         XCTAssertNil(TouchReport.parse([UInt8](repeating: 0x10, count: 64)))
     }

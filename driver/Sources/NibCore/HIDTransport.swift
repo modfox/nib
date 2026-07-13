@@ -12,6 +12,22 @@ public final class HIDTransport {
     private let onReport: ReportHandler
     private let onAttach: (() -> Void)?
 
+    /// A connected HID device's USB identity.
+    public struct DeviceInfo: Equatable, Sendable {
+        public let vendorID: UInt16
+        public let productID: UInt16
+    }
+
+    /// Enumerate currently-connected HID devices for `vendorID` (nil = any vendor).
+    /// Synchronous; safe to call before any transport is opened.
+    public static func enumerate(vendorID: UInt16? = nil, max: Int = 64) -> [DeviceInfo] {
+        var buf = [NibHIDDeviceInfo](repeating: NibHIDDeviceInfo(), count: max)
+        let n = buf.withUnsafeMutableBufferPointer {
+            nib_hid_enumerate(vendorID ?? 0, $0.baseAddress, $0.count)
+        }
+        return buf.prefix(Int(n)).map { DeviceInfo(vendorID: $0.vendorID, productID: $0.productID) }
+    }
+
     public init(vendorID: UInt16, productID: UInt16,
                 onAttach: (() -> Void)? = nil,
                 onReport: @escaping ReportHandler) {
