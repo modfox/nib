@@ -18,6 +18,21 @@ pen (position with in-app calibration, an adjustable pressure curve, tilt, remap
 buttons), multi-touch (2-finger scroll, tap-to-click, 3-finger swipe, palm rejection), a
 menu-bar app and a full preferences window, running as a persistent per-user LaunchAgent.
 
+## Why I built this
+
+I use a Cintiq Pro 24 Touch as my tablet display, and I'm a software developer. Whenever a
+new macOS beta is released, Wacom's drivers stop working. This was no different for macOS 27.
+I didn't want to roll back macOS or wait countless months for a fix, and decided to solve
+the problem for myself.
+
+My Cintiq also frequently fails to work when plugged in, and must be unplugged and replugged — oftentimes
+in a different USB-C port — before it works. Nib is designed to re-detect the tablet each time it is plugged in,
+and should handle this cleanly. I have to use the tablet day-to-day to confirm, but early signs are good.
+
+The final problem I hope to avoid is Wacom's inevitable end-of-lifing of my tablet. It is several years old now,
+and I do not know for how long they will continue to support it. In building my own driver, I hope to extend its
+life until the hardware fails.
+
 ## Screenshots
 
 <p>
@@ -72,6 +87,16 @@ logos, and brands are the property of their respective owners.
 Nib was created for **interoperability** — to let hardware its owners already possess work
 on macOS. It was developed by clean-room documentation of the device's own protocol and
 behavior; it does not include or redistribute any vendor software or assets.
+
+## AI disclosure
+
+Nib was built with the help of **Claude** (Anthropic's AI assistant, via
+Claude Code). AI was used throughout development — reverse-engineering the
+device protocol, writing and testing the Swift code, and drafting
+documentation — under my direction and review. I'm responsible for the
+project and its decisions; the clean-room reverse engineering was documented
+from the device's own observable behavior, not from any vendor source or
+confidential material.
 
 ## License
 See `LICENSE`.
