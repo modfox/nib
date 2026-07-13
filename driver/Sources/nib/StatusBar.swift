@@ -83,10 +83,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(header)
         menu.addItem(.separator())
 
-        // Touch controls submenu.
+        // Touch Enabled at top level for quick access.
+        addCheck(menu, "Touch Enabled", config.touchEnabled, #selector(toggleTouch))
+
+        // Remaining touch controls in a submenu.
         let touchItem = NSMenuItem(title: "Touch Controls", action: nil, keyEquivalent: "")
         let touchMenu = NSMenu()
-        addCheck(touchMenu, "Touch Enabled", config.touchEnabled, #selector(toggleTouch))
         addCheck(touchMenu, "Palm Rejection", config.palmRejection, #selector(togglePalm))
         addCheck(touchMenu, "Tap to Click", config.tapToClick, #selector(toggleTap))
         addCheck(touchMenu, "3-Finger Swipe", config.threeFingerSwipe, #selector(toggleSwipe))
@@ -111,6 +113,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(NSMenuItem(title: "Recalibrate…", action: #selector(recalibrate), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Open Config File", action: #selector(openConfig), keyEquivalent: ""))
         menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "Restart Driver", action: #selector(restartDriver), keyEquivalent: "r"))
         menu.addItem(NSMenuItem(title: "Quit Driver", action: #selector(quit), keyEquivalent: "q"))
         for mi in menu.items where mi.action != nil { mi.target = self }
     }
@@ -159,5 +162,14 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     @objc private func recalibrate() {
         calibration.begin(bounds: cintiqDisplayBounds())
     }
+    /// Restart via launchd: kickstart -k kills this instance and relaunches a fresh one.
+    /// Useful if the driver ever hangs or the tablet stops responding.
+    @objc private func restartDriver() {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        task.arguments = ["kickstart", "-k", "gui/\(getuid())/com.modfox.nib"]
+        try? task.run()
+    }
+
     @objc private func quit() { NSApp.terminate(nil) }
 }
