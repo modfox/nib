@@ -27,6 +27,7 @@ let package = Package(
             linkerSettings: [
                 .linkedFramework("CoreGraphics"),
                 .linkedFramework("ApplicationServices"),
+                .linkedFramework("AppKit"),
             ]
         ),
         .testTarget(name: "WacomDriverCoreTests", dependencies: ["WacomDriverCore"]),

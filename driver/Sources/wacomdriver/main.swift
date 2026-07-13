@@ -1,6 +1,7 @@
 import Foundation
 import CoreGraphics
 import ApplicationServices
+import AppKit
 import WacomDriverCore
 
 // DTH2420k0 confirmed USB identity (from live HID enumeration).
@@ -176,7 +177,9 @@ case "run":
     } else {
         FileHandle.standardError.write("wacomdriver: no calibration found, using full pen range\n".data(using: .utf8)!)
     }
+    let config = WacomConfig.load()
     let emitter = EventEmitter(mapping: mapping)
+    let touchGesture = TouchGestureEngine()
     var transport: HIDTransport!
     transport = HIDTransport(
         vendorID: WACOM_VID, productID: PEN_PID,
@@ -190,12 +193,7 @@ case "run":
         })
     transport.start()
 
-    // Touch: enable the sensor and drive 2-finger scroll.
-    let touchGesture = TouchGestureEngine()
-    // Match the system "natural scrolling" setting (NSGlobalDomain, default true).
-    if UserDefaults.standard.object(forKey: "com.apple.swipescrolldirection") != nil {
-        touchGesture.naturalScrolling = UserDefaults.standard.bool(forKey: "com.apple.swipescrolldirection")
-    }
+    // Touch: enable the sensor and drive 2-finger scroll (respecting the engine's enabled flag).
     var touch: HIDTransport!
     touch = HIDTransport(
         vendorID: WACOM_VID, productID: TOUCH_PID,
@@ -210,7 +208,13 @@ case "run":
     touch.start()
 
     FileHandle.standardError.write("wacomdriver: running (needs Accessibility/Input-Monitoring permission)\n".data(using: .utf8)!)
-    CFRunLoopRun()
+    // Menu-bar agent: status item applies config live to the engines. NSApplication.run()
+    // drives the main run loop, which the HID transports are scheduled on.
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    let statusBar = StatusBarController(config: config, emitter: emitter, touch: touchGesture)
+    _ = statusBar   // retained for the process lifetime
+    app.run()
 
 default:
     FileHandle.standardError.write("usage: wacomdriver [run|log|calibrate]\n".data(using: .utf8)!)

@@ -12,10 +12,13 @@ public final class TouchGestureEngine {
     /// Natural scrolling: content follows the fingers (macOS default). When true,
     /// moving fingers down reveals content above (scrolls toward the top).
     public var naturalScrolling = true
+    /// When false, touch input is ignored entirely.
+    public var enabled = true
 
     public init() {}
 
     public func handle(_ frame: TouchFrame) {
+        guard enabled else { lastCentroid = nil; return }
         let down = frame.contacts.filter { $0.down }
         defer { lastCount = down.count }
 

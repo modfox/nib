@@ -58,8 +58,12 @@ launchctl bootout gui/$(id -u)/com.wacom.wacomtablet 2>/dev/null
       **2-finger scroll** via CGScrollWheel, direction/speed matched to the system setting.
 - [x] **Stable code signing** — signed with self-signed `modfox-codesign` identity so TCC grants
       persist across rebuilds (verified). No more re-granting on each build.
-- [ ] Tilt verification + barrel-button bit; twist for art pens.
+- [x] **Tilt/barrel verified** — tiltX +right/-left, tiltY +bottom/-top (±64); lower button =
+      barrelButton, upper = secondaryBarrel. Side buttons wired (lower→right-click, upper→middle-click).
+- [x] **Settings menu-bar app** — status-item menu: Touch Enabled, Natural Scrolling, Scroll Speed,
+      Lower/Upper Side Button remap, Recalibrate, Open Config. Persists to `~/.config/wacomdriver/config.json`,
+      applied live to the engines.
 - [ ] ExpressKeys / touch-ring (pen report 0x11/0x13).
-- [ ] More touch gestures (pinch-zoom needs private gesture APIs; tap-to-click).
-- [ ] Pressure-curve config + button remapping (user settings).
+- [ ] More touch gestures (pinch-zoom needs private gesture APIs; tap-to-click) + palm rejection.
+- [ ] Pressure-curve config; full preferences window.
 - [ ] Developer ID signing + notarization (for distributing to other machines).
