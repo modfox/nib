@@ -42,7 +42,12 @@ verified: re-sign + reload leaves `Accessibility trusted = true` with no re-gran
    launchctl disable  gui/$(id -u)/com.wacom.wacomtablet
    launchctl disable  gui/$(id -u)/Wacom_IOManager
    ```
-2. Load our agent: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.modfox.nib.plist`
+2. Install + load the LaunchAgent (the template uses `/Users/USERNAME/`; substitute your home):
+   ```
+   sed "s|/Users/USERNAME/|$HOME/|g" driver/packaging/com.modfox.nib.plist \
+     > ~/Library/LaunchAgents/com.modfox.nib.plist
+   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.modfox.nib.plist
+   ```
 3. Grant **Nib.app** in System Settings › Privacy & Security:
    - **Input Monitoring** (read pen HID + send mode-switch)
    - **Accessibility** (post cursor/pressure events)

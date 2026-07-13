@@ -37,7 +37,7 @@ below are into the full 27-byte report and were verified against live raw-hex ca
 | 12–13 | Twist | int16 LE | | 0 for standard Pro Pen |
 | 14–15 | (vendor) | — | | 0 observed |
 | 16 | Hover distance | u8 | | `0x3f` far, decreases approaching |
-| 17–20 | **Serial** | u32 LE | | `0x44332211` (constant per pen) |
+| 17–20 | **Serial** | u32 LE | | `0xXXXXXXXX` (unique per pen; example redacted) |
 | 21–24 | Tool/type ID | u32 LE | | `0x00100842` observed |
 | 25–26 | (vendor 0x77) | u16 LE | 0..0x0fff | |
 
