@@ -29,9 +29,13 @@ public final class EventEmitter {
     /// Reports raw normalized pressure [0,1] each pointer event (for the prefs preview).
     public var pressureObserver: ((Double) -> Void)?
 
-    public init(mapping: DisplayMapping, deviceID: UInt16 = 1) {
+    private let sink: EventSink
+
+    public init(mapping: DisplayMapping, deviceID: UInt16 = 1,
+                sink: EventSink = SystemEventSink()) {
         self.mapping = mapping
         self.deviceID = deviceID
+        self.sink = sink
     }
 
     public func setMapping(_ m: DisplayMapping) { self.mapping = m }
@@ -84,7 +88,7 @@ public final class EventEmitter {
         }
         guard let e = CGEvent(mouseEventSource: nil, mouseType: type,
                               mouseCursorPosition: pt, mouseButton: button) else { return }
-        e.post(tap: .cghidEventTap)
+        sink.post(e)
     }
 
     // MARK: - Pointer
@@ -123,7 +127,7 @@ public final class EventEmitter {
         if s.barrelButton { buttons |= 0x2 }
         if s.secondaryBarrel { buttons |= 0x4 }
         e.setIntegerValueField(.tabletEventPointButtons, value: buttons)
-        e.post(tap: .cghidEventTap)
+        sink.post(e)
     }
 
     // MARK: - Proximity
@@ -140,6 +144,6 @@ public final class EventEmitter {
         // deviceID 0x01 | absX 0x02 | absY 0x04 | pressure 0x40 | orientation/tilt 0x100.
         e.setIntegerValueField(.tabletProximityEventCapabilityMask, value: 0x0147)
         e.setIntegerValueField(.tabletProximityEventSystemTabletID, value: Int64(deviceID))
-        e.post(tap: .cghidEventTap)
+        sink.post(e)
     }
 }
