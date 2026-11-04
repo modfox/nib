@@ -53,8 +53,7 @@ public final class DeviceManager {
             let watcher = HIDTransport(
                 vendorID: v, productID: 0,               // any product for this vendor
                 onAttach: { [weak self] in self?.reconcile() },
-                onDetach: { [weak self] in self?.reconcile() },
-                onReport: { _, _ in })                    // watch-only; no report decoding
+                onDetach: { [weak self] in self?.reconcile() })   // watch-only: no reports
             watcher.start()
             watchers.append(watcher)
         }

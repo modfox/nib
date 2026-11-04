@@ -35,7 +35,9 @@ typedef struct {
 size_t nib_hid_enumerate(uint16_t vendorID, NibHIDDeviceInfo *out, size_t maxOut);
 
 // Create a manager that matches (vendorID, productID). Pass productID = 0 to
-// match any product for the vendor. Does not open until nib_hid_run().
+// match any product for the vendor. Pass onReport = NULL for a watch-only manager
+// (attach/detach callbacks, no report delivery). Does not open until nib_hid_start().
+// Returns NULL if allocation fails.
 NibHIDContext *nib_hid_create(uint16_t vendorID, uint16_t productID,
                                   NibHIDReportCallback onReport,
                                   NibHIDDeviceCallback onAttach,

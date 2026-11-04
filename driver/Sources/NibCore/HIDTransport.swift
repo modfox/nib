@@ -10,7 +10,7 @@ public final class HIDTransport {
     private var selfRef: Unmanaged<HIDTransport>?   // the +1 retain given to the C userContext
     private let vendorID: UInt16
     private let productID: UInt16
-    private let onReport: ReportHandler
+    private let onReport: ReportHandler?
     private let onAttach: (() -> Void)?
     private let onDetach: (() -> Void)?
 
@@ -33,7 +33,7 @@ public final class HIDTransport {
     public init(vendorID: UInt16, productID: UInt16,
                 onAttach: (() -> Void)? = nil,
                 onDetach: (() -> Void)? = nil,
-                onReport: @escaping ReportHandler) {
+                onReport: ReportHandler? = nil) {
         self.vendorID = vendorID
         self.productID = productID
         self.onAttach = onAttach
@@ -47,16 +47,18 @@ public final class HIDTransport {
         // Keep `self` alive for the C callbacks via a +1 retain handed to userContext;
         // `stop()` balances it. This matters because transports are now ephemeral (a fresh
         // pen/touch pair per hotplug), so an unbalanced retain would leak each swap.
+        guard ctx == nil else { return }   // already started
         let ref = Unmanaged.passRetained(self)
-        selfRef = ref
+        // nil report handler → watch-only: the C layer skips report delivery entirely.
+        let reportCB: NibHIDReportCallback? = onReport == nil ? nil : { userCtx, reportID, report, length in
+            guard let userCtx, let report else { return }
+            let me = Unmanaged<HIDTransport>.fromOpaque(userCtx).takeUnretainedValue()
+            let payload = Array(UnsafeBufferPointer(start: report, count: length))
+            me.onReport?(reportID, payload)
+        }
         ctx = nib_hid_create(
             vendorID, productID,
-            { userCtx, reportID, report, length in
-                guard let userCtx, let report else { return }
-                let me = Unmanaged<HIDTransport>.fromOpaque(userCtx).takeUnretainedValue()
-                let payload = Array(UnsafeBufferPointer(start: report, count: length))
-                me.onReport(reportID, payload)
-            },
+            reportCB,
             { userCtx, _, _ in
                 guard let userCtx else { return }
                 let me = Unmanaged<HIDTransport>.fromOpaque(userCtx).takeUnretainedValue()
@@ -69,6 +71,12 @@ public final class HIDTransport {
             },
             ref.toOpaque()
         )
+        guard let ctx else {
+            ref.release()   // creation failed: no callbacks will ever use the retain
+            FileHandle.standardError.write("nib: failed to create HID manager for \(String(format: "%04x:%04x", vendorID, productID))\n".data(using: .utf8)!)
+            return
+        }
+        selfRef = ref
         nib_hid_start(ctx)
     }
 
