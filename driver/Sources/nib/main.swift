@@ -109,36 +109,11 @@ case "calibrate":
     let profile = detectProfile()
     let bounds = cintiqDisplayBounds(profile)
     func cerr(_ s: String) { FileHandle.standardError.write((s + "\n").data(using: .utf8)!) }
-    let p1 = CGPoint(x: bounds.minX + 0.15 * bounds.width, y: bounds.minY + 0.15 * bounds.height)
-    let p2 = CGPoint(x: bounds.minX + 0.85 * bounds.width, y: bounds.minY + 0.85 * bounds.height)
-
-    var state = 0            // 0: hold P1, 1: lift, 2: hold P2
-    var buf: [(Int, Int)] = []
-    let K = 40, tol = 1200   // samples to confirm a steady hold; raw-unit spread tolerance
-    var rawP1 = (0.0, 0.0)
-
-    func mean(_ b: [(Int, Int)]) -> (Double, Double) {
-        (b.reduce(0.0) { $0 + Double($1.0) } / Double(b.count),
-         b.reduce(0.0) { $0 + Double($1.1) } / Double(b.count))
-    }
-    func stable(_ b: [(Int, Int)]) -> Bool {
-        let xs = b.map { $0.0 }, ys = b.map { $0.1 }
-        return (xs.max()! - xs.min()! < tol) && (ys.max()! - ys.min()! < tol)
-    }
-    func finish(_ rawP2: (Double, Double)) {
-        let sx = (Double(p2.x) - Double(p1.x)) / (rawP2.0 - rawP1.0)
-        let ox = Double(p1.x) - sx * rawP1.0            // screenX = sx*raw + ox
-        let sy = (Double(p2.y) - Double(p1.y)) / (rawP2.1 - rawP1.1)
-        let oy = Double(p1.y) - sy * rawP1.1
-        let cal = Calibration(
-            xMin: (Double(bounds.minX) - ox) / sx, xMax: (Double(bounds.maxX) - ox) / sx,
-            yMin: (Double(bounds.minY) - oy) / sy, yMax: (Double(bounds.maxY) - oy) / sy)
-        do { try cal.save(); cerr("nib: calibration saved to \(Calibration.fileURL.path)") }
-        catch { cerr("nib: save failed: \(error)") }
-        cerr(String(format: "nib: active raw range X[%.0f..%.0f] Y[%.0f..%.0f]",
-                    cal.xMin, cal.xMax, cal.yMin, cal.yMax))
-        exit(0)
-    }
+    // Targets as fractions of the display (the solver's space) and as screen points.
+    let f1 = CGPoint(x: 0.15, y: 0.15), f2 = CGPoint(x: 0.85, y: 0.85)
+    let p1 = CGPoint(x: bounds.minX + f1.x * bounds.width, y: bounds.minY + f1.y * bounds.height)
+    let p2 = CGPoint(x: bounds.minX + f2.x * bounds.width, y: bounds.minY + f2.y * bounds.height)
+    var solver = CalibrationSolver(target1: f1, target2: f2, pen: profile.pen)
 
     CGWarpMouseCursorPosition(p1)
     cerr("nib: CALIBRATION — place the pen tip exactly on the cursor dot (upper-left area) and hold still…")
@@ -148,18 +123,22 @@ case "calibrate":
         onAttach: { enableNativeMode(calTransport, profile) },
         onReport: { reportID, payload in
             guard reportID == profile.pen.reportID, let s = PenReport.parse(payload, profile.pen) else { return }
-            if !s.tipDown || !s.inRange {
-                if state == 1 { state = 2; CGWarpMouseCursorPosition(p2)
-                    cerr("nib: point 1 captured. Now align the pen to the cursor (lower-right area) and hold…") }
-                buf.removeAll(); return
-            }
-            guard state == 0 || state == 2 else { buf.removeAll(); return }
-            buf.append((s.x, s.y)); if buf.count > K { buf.removeFirst() }
-            if buf.count == K && stable(buf) {
-                let m = mean(buf)
-                if state == 0 { rawP1 = m; state = 1; buf.removeAll()
-                    cerr("nib: got point 1 raw=(\(Int(m.0)),\(Int(m.1))). Lift the pen.") }
-                else { finish(m) }
+            switch solver.feed(s) {
+            case .none: break
+            case .firstCaptured:
+                cerr("nib: got point 1. Lift the pen.")
+            case .awaitingSecond:
+                CGWarpMouseCursorPosition(p2)
+                cerr("nib: point 1 captured. Now align the pen to the cursor (lower-right area) and hold…")
+            case .finished(let cal):
+                do { try cal.save(); cerr("nib: calibration saved to \(Calibration.fileURL.path)") }
+                catch { cerr("nib: save failed: \(error)") }
+                cerr(String(format: "nib: active raw range X[%.0f..%.0f] Y[%.0f..%.0f]",
+                            cal.xMin, cal.xMax, cal.yMin, cal.yMax))
+                exit(0)
+            case .rejected:
+                CGWarpMouseCursorPosition(p1)
+                cerr("nib: calibration rejected (points too close or reversed) — try again from the upper-left dot")
             }
         })
     calTransport.start()
