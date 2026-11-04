@@ -20,8 +20,9 @@ public final class EventEmitter {
     private var lastPoint = CGPoint.zero
     private var lastInverted = false
     private let deviceID: UInt16
-    private let vendorID: UInt16 = 0x056a
-    private let pressureMax = Double(PenSample.pressureLogicalMax)
+    /// From the active profile (see `setProfile`); DTH2420 values until one is set.
+    private var vendorID: UInt16 = DeviceProfile.dth2420.vendorID
+    private var pressureMax = Double(DeviceProfile.dth2420.pen.pressureLogicalMax)
 
     /// Verified: lower side button = `barrelButton`, upper = `secondaryBarrel`.
     public var lowerBarrelAction: PenButtonAction = .rightClick
@@ -57,6 +58,12 @@ public final class EventEmitter {
     }
 
     public func setMapping(_ m: DisplayMapping) { self.mapping = m }
+
+    /// Adopt the model-specific values (USB vendor, pressure range) of the active device.
+    public func setProfile(_ p: DeviceProfile) {
+        vendorID = p.vendorID
+        pressureMax = Double(max(1, p.pen.pressureLogicalMax))
+    }
 
     public func handle(_ s: PenSample) {
         // Proximity transitions -> tablet proximity events.

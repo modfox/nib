@@ -47,4 +47,18 @@ final class EventEmitterTests: XCTestCase {
         let states = sink.clicks.map { $0.getIntegerValueField(.mouseEventClickState) }
         XCTAssertEqual(states, [1, 1, 2, 2])
     }
+
+    func testPressureIsScaledByTheProfilesMax() {
+        let sink = RecordingSink(), em = makeEmitter(sink)
+        var p = DeviceProfile.dth2420
+        p.pen.pressureLogicalMax = 2047            // a lower-resolution model
+        em.setProfile(p)
+        em.handle(sample(tip: true))               // pressure 4000 > 2047 → clamped to 1.0
+        let down = sink.events.first { $0.type == .leftMouseDown }!
+        XCTAssertEqual(down.getDoubleValueField(.mouseEventPressure), 1.0, accuracy: 1e-6)
+        em.setProfile(.dth2420)
+        em.handle(sample(tip: true))               // 4000 / 8191
+        XCTAssertEqual(sink.events.last { $0.type == .leftMouseDragged }!
+                           .getDoubleValueField(.tabletEventPointPressure), 4000.0 / 8191.0, accuracy: 1e-3)
+    }
 }

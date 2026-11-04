@@ -197,6 +197,7 @@ case "run":
             log("no calibration found, using full pen range")
         }
         emitter.setMapping(penMap)
+        emitter.setProfile(profile)
         touchGesture.tapMapping = DisplayMapping(
             targetBounds: bounds,
             xMin: 0, xMax: Double(profile.touch.xLogicalMax),
