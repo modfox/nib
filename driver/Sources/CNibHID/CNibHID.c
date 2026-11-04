@@ -5,15 +5,33 @@
 #include <stdlib.h>
 #include <string.h>
 
+// One matched device and its own input-report buffer (IOKit writes each report into the
+// buffer registered for that device, so devices must not share one).
+typedef struct NibHIDDeviceNode {
+    IOHIDDeviceRef device;
+    uint8_t *buffer;               // NULL when the context has no report callback
+    struct NibHIDDeviceNode *next;
+} NibHIDDeviceNode;
+
 struct NibHIDContext {
     IOHIDManagerRef manager;
-    IOHIDDeviceRef  device;        // first matched device
+    IOHIDDeviceRef  device;        // device used for feature/output writes
+    NibHIDDeviceNode *devices;     // every currently matched device
     uint16_t vendorID, productID;
     NibHIDReportCallback onReport;
     NibHIDDeviceCallback onAttach, onDetach;
     void *userContext;
-    uint8_t inputBuffer[64];
 };
+
+enum { kNibDefaultInputReportSize = 64 };
+
+static size_t maxInputReportSize(IOHIDDeviceRef dev) {
+    CFTypeRef p = IOHIDDeviceGetProperty(dev, CFSTR(kIOHIDMaxInputReportSizeKey));
+    int v = 0;
+    if (p && CFGetTypeID(p) == CFNumberGetTypeID())
+        CFNumberGetValue((CFNumberRef)p, kCFNumberIntType, &v);
+    return v > 0 ? (size_t)v : kNibDefaultInputReportSize;
+}
 
 // Read a numeric IOHIDDevice property (e.g. VendorID/ProductID). Returns 0 if absent.
 static uint16_t readDeviceID(IOHIDDeviceRef dev, CFStringRef key) {
@@ -36,10 +54,21 @@ static void inputReportCB(void *context, IOReturn result, void *sender,
 static void matchCB(void *context, IOReturn result, void *sender, IOHIDDeviceRef dev) {
     (void)result; (void)sender;
     NibHIDContext *ctx = (NibHIDContext *)context;
+    NibHIDDeviceNode *node = calloc(1, sizeof(*node));
+    if (!node) return;
+    node->device = dev;
+    // Watch-only contexts (no report callback) skip report delivery entirely, so they cost
+    // nothing per report.
+    if (ctx->onReport) {
+        size_t len = maxInputReportSize(dev);
+        node->buffer = calloc(1, len);
+        if (node->buffer)
+            IOHIDDeviceRegisterInputReportCallback(dev, node->buffer, (CFIndex)len,
+                                                   inputReportCB, ctx);
+    }
+    node->next = ctx->devices;
+    ctx->devices = node;
     if (!ctx->device) ctx->device = dev;
-    IOHIDDeviceRegisterInputReportCallback(dev, ctx->inputBuffer,
-                                           sizeof(ctx->inputBuffer),
-                                           inputReportCB, ctx);
     // Report the device's real IDs (the match filter may be vendor-only, productID = 0).
     if (ctx->onAttach) ctx->onAttach(ctx->userContext,
                                      readDeviceID(dev, CFSTR(kIOHIDVendorIDKey)),
@@ -51,7 +80,17 @@ static void removalCB(void *context, IOReturn result, void *sender, IOHIDDeviceR
     NibHIDContext *ctx = (NibHIDContext *)context;
     uint16_t vid = readDeviceID(dev, CFSTR(kIOHIDVendorIDKey));
     uint16_t pid = readDeviceID(dev, CFSTR(kIOHIDProductIDKey));
-    if (ctx->device == dev) ctx->device = NULL;
+    for (NibHIDDeviceNode **pp = &ctx->devices; *pp; pp = &(*pp)->next) {
+        if ((*pp)->device == dev) {
+            NibHIDDeviceNode *gone = *pp;
+            *pp = gone->next;
+            free(gone->buffer);
+            free(gone);
+            break;
+        }
+    }
+    // Fall back to another still-matched device for writes, if any.
+    if (ctx->device == dev) ctx->device = ctx->devices ? ctx->devices->device : NULL;
     if (ctx->onDetach) ctx->onDetach(ctx->userContext, vid, pid);
 }
 
@@ -75,6 +114,7 @@ static CFDictionaryRef makeMatch(uint16_t vid, uint16_t pid) {
 size_t nib_hid_enumerate(uint16_t vendorID, NibHIDDeviceInfo *out, size_t maxOut) {
     if (!out || maxOut == 0) return 0;
     IOHIDManagerRef mgr = IOHIDManagerCreate(kCFAllocatorDefault, kIOHIDOptionsTypeNone);
+    if (!mgr) return 0;
     if (vendorID) {
         CFDictionaryRef m = makeMatch(vendorID, 0);
         IOHIDManagerSetDeviceMatching(mgr, m);
@@ -111,10 +151,12 @@ NibHIDContext *nib_hid_create(uint16_t vendorID, uint16_t productID,
                                   NibHIDDeviceCallback onDetach,
                                   void *userContext) {
     NibHIDContext *ctx = calloc(1, sizeof(*ctx));
+    if (!ctx) return NULL;
     ctx->vendorID = vendorID; ctx->productID = productID;
     ctx->onReport = onReport; ctx->onAttach = onAttach; ctx->onDetach = onDetach;
     ctx->userContext = userContext;
     ctx->manager = IOHIDManagerCreate(kCFAllocatorDefault, kIOHIDOptionsTypeNone);
+    if (!ctx->manager) { free(ctx); return NULL; }
     CFDictionaryRef m = makeMatch(vendorID, productID);
     IOHIDManagerSetDeviceMatching(ctx->manager, m);
     CFRelease(m);
@@ -159,5 +201,7 @@ void nib_hid_stop(NibHIDContext *ctx) {
 void nib_hid_free(NibHIDContext *ctx) {
     if (!ctx) return;
     if (ctx->manager) CFRelease(ctx->manager);
+    NibHIDDeviceNode *n = ctx->devices;
+    while (n) { NibHIDDeviceNode *next = n->next; free(n->buffer); free(n); n = next; }
     free(ctx);
 }

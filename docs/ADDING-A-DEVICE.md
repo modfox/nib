@@ -46,12 +46,24 @@ Precision-Touchpad-style digitizer). Note both PIDs.
 
 ## Step 2 — capture labeled gestures
 
-`nib capture` opens every connected interface of the known vendors, sends the best-guess
-Wacom enable sequences, and prints every report as raw hex tagged by PID:
+`nib capture` opens every connected interface of the known vendors and prints every report
+as raw hex tagged by PID. By default it only **listens** — it sends nothing to the tablet:
 
 ```
 nib capture > my-device-capture.txt
 ```
+
+If the pen produces no high-res report this way, run it again with `--send-enable`, which
+also sends the DTH2420's mode-switch and touch-enable reports to every interface (these
+work across much of the Wacom family):
+
+```
+nib capture --send-enable > my-device-capture-enabled.txt
+```
+
+`--send-enable` writes vendor-specific reports whose meaning on another model is unknown,
+so only use it when the passive capture shows no pen report, and say in the bundle which
+mode produced each file. Unplugging and replugging the tablet resets it.
 
 Then perform each gesture below **one at a time**, pausing between them, and keep a note of
 which lines correspond to which gesture (timestamps or "I did X now" markers help):
@@ -66,8 +78,8 @@ which lines correspond to which gesture (timestamps or "I did X now" markers hel
 **Touch (find the touch PID's lines):**
 - **One finger** down at a known spot, **two fingers**, **three fingers**.
 
-> If the pen produces **no** high-res report under `nib capture`, its mode-switch differs
-> from the DTH2420's. That's the one part the descriptor can't give you — note it in the
+> If the pen produces **no** high-res report even under `nib capture --send-enable`, its
+> mode-switch differs from the DTH2420's. That's the one part the descriptor can't give you — note it in the
 > bundle; it needs a person with the device to help recover (see "What still needs the
 > hardware").
 
@@ -163,8 +175,8 @@ The descriptor gives the **decode layout** for free. It does **not** give:
 - **The pen mode-switch** (`initSequence`) — some models only emit their high-res report
   after a vendor feature write. For the DTH2420 this was recovered by decompiling Wacom's
   driver (`recon/`), not from any descriptor. If `nib capture` shows no pen report, this is
-  why, and recovering it needs someone with the device (try the DTH2420 sequence first; it
-  covers much of the Wacom family).
+  why, and recovering it needs someone with the device (try `nib capture --send-enable`
+  first; the DTH2420 sequence covers much of the Wacom family).
 - **The touch-enable sequence** (`touchEnable`) — likewise for the multitouch sensor.
 - **Final sign-off** — that pen tracking, pressure curve and gestures actually feel right.
 

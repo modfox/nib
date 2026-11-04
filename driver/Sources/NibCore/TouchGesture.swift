@@ -28,6 +28,12 @@ public final class TouchGestureEngine {
     private var tapActive = false
     private var tapStart: (x: Double, y: Double, t: TimeInterval) = (0, 0, 0)
     private var tapMoved = 0.0
+    private var tapClicks = ClickCounter(maxDistance: 20)   // fingers land less precisely than a pen
+    /// System double-click interval (the app sets it from NSEvent.doubleClickInterval).
+    public var doubleClickInterval: TimeInterval {
+        get { tapClicks.interval }
+        set { tapClicks.interval = newValue }
+    }
 
     /// Three-finger swipe → Mission Control shortcuts (switch spaces / Mission Control /
     /// App Exposé). Uses the default macOS keyboard shortcuts, so they must be enabled
@@ -50,25 +56,35 @@ public final class TouchGestureEngine {
 
     /// Fed from the pen report stream so touch can be gated on pen proximity.
     public func setPenInProximity(_ v: Bool) {
-        if penInProximity && !v { penLeftAt = ProcessInfo.processInfo.systemUptime }
+        if penInProximity && !v { penLeftAt = now() }
         penInProximity = v
     }
 
     private var penBlocking: Bool {
         guard palmRejection else { return false }
         if penInProximity { return true }
-        return (ProcessInfo.processInfo.systemUptime - penLeftAt) < palmCooldown
+        return (now() - penLeftAt) < palmCooldown
     }
 
-    public init() {}
+    private let sink: EventSink
+    private let now: () -> TimeInterval
+    /// Performs a three-finger swipe given the arrow key code (123 ← / 124 → / 125 ↓ / 126 ↑).
+    /// Defaults to Control+arrow via System Events; tests substitute a recorder.
+    public var onSwipe: (Int) -> Void = TouchGestureEngine.postControlKey
+
+    public init(sink: EventSink = SystemEventSink(),
+                now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
+        self.sink = sink
+        self.now = now
+    }
 
     public func handle(_ frame: TouchFrame) {
         guard enabled, !penBlocking else { lastCentroid = nil; tapActive = false; return }
         let down = frame.contacts.filter { $0.down }
         defer { lastCount = down.count }
 
-        let now = ProcessInfo.processInfo.systemUptime
-        if lastCount == 0 && down.count > 0 { sequenceStart = now }
+        let t = now()
+        if lastCount == 0 && down.count > 0 { sequenceStart = t }
         // Any sequence that reaches 3 fingers is a swipe, not a scroll — suppress scroll
         // for the whole sequence (incl. the 2-finger phases while landing/lifting).
         if down.count >= 3 { sawThreePlus = true }
@@ -78,7 +94,7 @@ public final class TouchGestureEngine {
         if threeFingerSwipe { updateSwipe(down) }
 
         // Scroll only for a settled 2-finger touch that never reached 3 fingers.
-        let canScroll = down.count == 2 && !sawThreePlus && (now - sequenceStart) >= scrollSettle
+        let canScroll = down.count == 2 && !sawThreePlus && (t - sequenceStart) >= scrollSettle
         guard canScroll else { lastCentroid = nil; return }
 
         let cx = down.reduce(0.0) { $0 + Double($1.x) } / 2.0
@@ -103,19 +119,19 @@ public final class TouchGestureEngine {
         guard let e = CGEvent(scrollWheelEvent2Source: nil, units: .pixel,
                               wheelCount: 2, wheel1: Int32(dy), wheel2: Int32(dx), wheel3: 0)
         else { return }
-        e.post(tap: .cghidEventTap)
+        sink.post(e)
     }
 
     // MARK: - Tap to click
 
     private func updateTap(_ down: [TouchContact]) {
-        let now = ProcessInfo.processInfo.systemUptime
+        let t = now()
         switch down.count {
         case 1:
             let f = down[0]
             if !tapActive && lastCount == 0 {
                 tapActive = true
-                tapStart = (Double(f.x), Double(f.y), now)
+                tapStart = (Double(f.x), Double(f.y), t)
                 tapMoved = 0
             } else if tapActive {
                 let dx = Double(f.x) - tapStart.x, dy = Double(f.y) - tapStart.y
@@ -123,7 +139,7 @@ public final class TouchGestureEngine {
             }
         case 0:
             if tapActive {
-                let quick = (now - tapStart.t) <= tapMaxDuration
+                let quick = (t - tapStart.t) <= tapMaxDuration
                 if quick && tapMoved <= tapMoveThreshold {
                     emitTapClick(x: Int(tapStart.x), y: Int(tapStart.y))
                 }
@@ -137,9 +153,12 @@ public final class TouchGestureEngine {
     private func emitTapClick(x: Int, y: Int) {
         guard let m = tapMapping else { return }
         let pt = m.point(x: x, y: y)
+        let clicks = tapClicks.down(at: pt, time: now())
         for type in [CGEventType.leftMouseDown, .leftMouseUp] {
-            CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: pt, mouseButton: .left)?
-                .post(tap: .cghidEventTap)
+            guard let e = CGEvent(mouseEventSource: nil, mouseType: type,
+                                  mouseCursorPosition: pt, mouseButton: .left) else { continue }
+            e.setIntegerValueField(.mouseEventClickState, value: Int64(clicks))
+            sink.post(e)
         }
     }
 
@@ -174,16 +193,18 @@ public final class TouchGestureEngine {
             key = dy < 0 ? 126 : 125        // up → Mission Control (↑) ; down → App Exposé (↓)
         }
         debug?("swipe: FIRE key=\(key)")
-        postControlKey(key)
+        onSwipe(key)
     }
 
     /// Fire Control+<arrow> via System Events. Raw CGEvent posting does not reliably
     /// trigger these system shortcuts from a background agent, but osascript/System
     /// Events does. Runs detached (needs the one-time Automation permission prompt).
-    private func postControlKey(_ keyCode: Int) {
+    public static func postControlKey(_ keyCode: Int) {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         task.arguments = ["-e", "tell application \"System Events\" to key code \(keyCode) using control down"]
-        do { try task.run() } catch { debug?("swipe: osascript failed \(error)") }
+        do { try task.run() } catch {
+            FileHandle.standardError.write("nib: swipe osascript failed \(error)\n".data(using: .utf8)!)
+        }
     }
 }

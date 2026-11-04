@@ -28,11 +28,16 @@ public struct DeviceProfile: Sendable {
     /// Native panel resolution in pixels, used to locate the tablet's own display for 1:1
     /// pen mapping. `nil` = no built-in display (map to the main display instead).
     public var panelSize: CGSize?
+    /// EDID vendor / model of the built-in display (`CGDisplayVendorNumber` /
+    /// `CGDisplayModelNumber`). Preferred over `panelSize` for locating the tablet's screen,
+    /// since another monitor may share its resolution. `nil` = unknown; match by size.
+    public var displayVendor: UInt32?
+    public var displayModel: UInt32?
 
     public init(name: String, vendorID: UInt16, penPID: UInt16, touchPID: UInt16,
                 pen: PenLayout, touch: TouchLayout,
                 initSequence: [FeatureWrite], touchEnable: [OutputWrite],
-                panelSize: CGSize?) {
+                panelSize: CGSize?, displayVendor: UInt32? = nil, displayModel: UInt32? = nil) {
         self.name = name
         self.vendorID = vendorID
         self.penPID = penPID
@@ -42,6 +47,8 @@ public struct DeviceProfile: Sendable {
         self.initSequence = initSequence
         self.touchEnable = touchEnable
         self.panelSize = panelSize
+        self.displayVendor = displayVendor
+        self.displayModel = displayModel
     }
 }
 
@@ -158,7 +165,9 @@ public extension DeviceProfile {
             OutputWrite(reportID: 0x06, touchConfigBuffer(sub: 0x06, val: 0x02)),  // enable multitouch
             OutputWrite(reportID: 0x06, touchConfigBuffer(sub: 0x01, val: 0x03)),  // HID+touch configure
         ],
-        panelSize: CGSize(width: 3840, height: 2160))
+        panelSize: CGSize(width: 3840, height: 2160),
+        displayVendor: 0x5c23,   // "WAC"
+        displayModel: 0x1056)
 
     /// Build a 64-byte Wacom vendor touch-config OUTPUT report:
     ///   [0]=0x06 id, [1]=0x06, [2]=0x00, [3]=sub-cmd, [4]=value, rest 0.

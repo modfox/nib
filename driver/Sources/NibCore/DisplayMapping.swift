@@ -23,20 +23,27 @@ public struct DisplayMapping: Sendable {
 
     /// Map raw tablet (x, y) to a global display point.
     public func point(x: Int, y: Int) -> CGPoint {
-        let fx = clamp((Double(x) - xMin) / (xMax - xMin))
-        let fy = clamp((Double(y) - yMin) / (yMax - yMin))
+        let fx = fraction(Double(x), xMin, xMax)
+        let fy = fraction(Double(y), yMin, yMax)
         return CGPoint(
             x: targetBounds.minX + fx * targetBounds.width,
             y: targetBounds.minY + fy * targetBounds.height
         )
     }
 
-    private func clamp(_ v: Double) -> Double { min(1, max(0, v)) }
+    /// Position of `v` within `lo...hi`, clamped to [0,1]. A degenerate (zero-width or
+    /// non-finite) range maps to 0 rather than producing NaN.
+    private func fraction(_ v: Double, _ lo: Double, _ hi: Double) -> Double {
+        let span = hi - lo
+        guard span != 0, span.isFinite else { return 0 }
+        let f = (v - lo) / span
+        return f.isFinite ? min(1, max(0, f)) : 0
+    }
 }
 
 /// Calibration constants (the raw pen active-range), persisted to disk so `run` picks
 /// them up. Bounds are recomputed live from the Cintiq display each launch.
-public struct Calibration: Codable, Sendable {
+public struct Calibration: Codable, Sendable, Equatable {
     public var xMin, xMax, yMin, yMax: Double
     public init(xMin: Double, xMax: Double, yMin: Double, yMax: Double) {
         self.xMin = xMin; self.xMax = xMax; self.yMin = yMin; self.yMax = yMax

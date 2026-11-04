@@ -17,9 +17,12 @@ public final class EventEmitter {
     private var wasTipDown = false
     private var wasBarrel = false
     private var wasSecondary = false
+    private var lastPoint = CGPoint.zero
+    private var lastInverted = false
     private let deviceID: UInt16
-    private let vendorID: UInt16 = 0x056a
-    private let pressureMax = Double(PenSample.pressureLogicalMax)
+    /// From the active profile (see `setProfile`); DTH2420 values until one is set.
+    private var vendorID: UInt16 = DeviceProfile.dth2420.vendorID
+    private var pressureMax = Double(DeviceProfile.dth2420.pen.pressureLogicalMax)
 
     /// Verified: lower side button = `barrelButton`, upper = `secondaryBarrel`.
     public var lowerBarrelAction: PenButtonAction = .rightClick
@@ -29,34 +32,72 @@ public final class EventEmitter {
     /// Reports raw normalized pressure [0,1] each pointer event (for the prefs preview).
     public var pressureObserver: ((Double) -> Void)?
 
-    public init(mapping: DisplayMapping, deviceID: UInt16 = 1) {
+    /// Multi-click detection for the tip and each side button.
+    private var tipClicks = ClickCounter(), lowerClicks = ClickCounter(), upperClicks = ClickCounter()
+    /// Click state of the current tip press / held side buttons (carried on drags and ups).
+    private var tipClickState = 1, lowerClickState = 1, upperClickState = 1
+    /// System double-click interval (the app sets it from NSEvent.doubleClickInterval).
+    public var doubleClickInterval: TimeInterval = 0.5 {
+        didSet {
+            tipClicks.interval = doubleClickInterval
+            lowerClicks.interval = doubleClickInterval
+            upperClicks.interval = doubleClickInterval
+        }
+    }
+
+    private let sink: EventSink
+    private let now: () -> TimeInterval
+
+    public init(mapping: DisplayMapping, deviceID: UInt16 = 1,
+                sink: EventSink = SystemEventSink(),
+                now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
         self.mapping = mapping
         self.deviceID = deviceID
+        self.sink = sink
+        self.now = now
     }
 
     public func setMapping(_ m: DisplayMapping) { self.mapping = m }
 
+    /// Adopt the model-specific values (USB vendor, pressure range) of the active device.
+    public func setProfile(_ p: DeviceProfile) {
+        vendorID = p.vendorID
+        pressureMax = Double(max(1, p.pen.pressureLogicalMax))
+    }
+
     public func handle(_ s: PenSample) {
         // Proximity transitions -> tablet proximity events.
         if s.inRange && !wasInProximity {
-            postProximity(entering: true, sample: s)
+            postProximity(entering: true, inverted: s.inverted)
             wasInProximity = true
         }
 
         if s.inRange {
+            lastPoint = mapping.point(x: s.x, y: s.y)
+            lastInverted = s.inverted
             postPointer(s)
             handleButtons(s)
         }
 
         if !s.inRange && wasInProximity {
-            // Release any held side buttons before leaving proximity.
-            let pt = mapping.point(x: s.x, y: s.y)
-            if wasBarrel { postButton(lowerBarrelAction, down: false, at: pt); wasBarrel = false }
-            if wasSecondary { postButton(upperBarrelAction, down: false, at: pt); wasSecondary = false }
-            postProximity(entering: false, sample: s)
-            wasInProximity = false
-            wasTipDown = false
+            reset()
         }
+    }
+
+    /// Release everything currently held (tip, side buttons) and leave proximity, at the
+    /// last in-range position. Called on proximity exit, and by the app when the tablet
+    /// detaches or calibration takes over the pen stream, so no button is left "stuck".
+    public func reset() {
+        let pt = lastPoint
+        if wasTipDown, let e = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp,
+                                       mouseCursorPosition: pt, mouseButton: .left) {
+            e.setIntegerValueField(.mouseEventClickState, value: Int64(tipClickState))
+            sink.post(e)
+        }
+        if wasBarrel { postButton(lowerBarrelAction, down: false, at: pt, clicks: lowerClickState) }
+        if wasSecondary { postButton(upperBarrelAction, down: false, at: pt, clicks: upperClickState) }
+        if wasInProximity { postProximity(entering: false, inverted: lastInverted) }
+        wasTipDown = false; wasBarrel = false; wasSecondary = false; wasInProximity = false
     }
 
     // MARK: - Side buttons
@@ -64,16 +105,18 @@ public final class EventEmitter {
     private func handleButtons(_ s: PenSample) {
         let pt = mapping.point(x: s.x, y: s.y)
         if s.barrelButton != wasBarrel {
-            postButton(lowerBarrelAction, down: s.barrelButton, at: pt)
+            if s.barrelButton { lowerClickState = lowerClicks.down(at: pt, time: now()) }
+            postButton(lowerBarrelAction, down: s.barrelButton, at: pt, clicks: lowerClickState)
             wasBarrel = s.barrelButton
         }
         if s.secondaryBarrel != wasSecondary {
-            postButton(upperBarrelAction, down: s.secondaryBarrel, at: pt)
+            if s.secondaryBarrel { upperClickState = upperClicks.down(at: pt, time: now()) }
+            postButton(upperBarrelAction, down: s.secondaryBarrel, at: pt, clicks: upperClickState)
             wasSecondary = s.secondaryBarrel
         }
     }
 
-    private func postButton(_ action: PenButtonAction, down: Bool, at pt: CGPoint) {
+    private func postButton(_ action: PenButtonAction, down: Bool, at pt: CGPoint, clicks: Int) {
         let type: CGEventType
         let button: CGMouseButton
         switch action {
@@ -84,7 +127,8 @@ public final class EventEmitter {
         }
         guard let e = CGEvent(mouseEventSource: nil, mouseType: type,
                               mouseCursorPosition: pt, mouseButton: button) else { return }
-        e.post(tap: .cghidEventTap)
+        e.setIntegerValueField(.mouseEventClickState, value: Int64(clicks))
+        sink.post(e)
     }
 
     // MARK: - Pointer
@@ -98,9 +142,13 @@ public final class EventEmitter {
         else if s.tipDown { type = .leftMouseDragged }
         else { type = .mouseMoved }
         wasTipDown = s.tipDown
+        if type == .leftMouseDown { tipClickState = tipClicks.down(at: pt, time: now()) }
 
         guard let e = CGEvent(mouseEventSource: nil, mouseType: type,
                               mouseCursorPosition: pt, mouseButton: .left) else { return }
+        if type != .mouseMoved {
+            e.setIntegerValueField(.mouseEventClickState, value: Int64(tipClickState))
+        }
 
         let rawPressure = Double(s.pressure) / pressureMax     // 0.0 ... 1.0
         pressureObserver?(rawPressure)
@@ -123,23 +171,23 @@ public final class EventEmitter {
         if s.barrelButton { buttons |= 0x2 }
         if s.secondaryBarrel { buttons |= 0x4 }
         e.setIntegerValueField(.tabletEventPointButtons, value: buttons)
-        e.post(tap: .cghidEventTap)
+        sink.post(e)
     }
 
     // MARK: - Proximity
 
-    private func postProximity(entering: Bool, sample s: PenSample) {
+    private func postProximity(entering: Bool, inverted: Bool) {
         guard let e = CGEvent(source: nil) else { return }
         e.type = .tabletProximity
         e.setIntegerValueField(.tabletProximityEventVendorID, value: Int64(vendorID))
         e.setIntegerValueField(.tabletProximityEventDeviceID, value: Int64(deviceID))
         e.setIntegerValueField(.tabletProximityEventPointerType,
-                               value: s.inverted ? 3 /*eraser*/ : 1 /*pen*/)
+                               value: inverted ? 3 /*eraser*/ : 1 /*pen*/)
         e.setIntegerValueField(.tabletProximityEventEnterProximity, value: entering ? 1 : 0)
         // Advertise capabilities so apps enable pressure/tilt. Bits (NX_TABLET_CAPABILITY_*):
         // deviceID 0x01 | absX 0x02 | absY 0x04 | pressure 0x40 | orientation/tilt 0x100.
         e.setIntegerValueField(.tabletProximityEventCapabilityMask, value: 0x0147)
         e.setIntegerValueField(.tabletProximityEventSystemTabletID, value: Int64(deviceID))
-        e.post(tap: .cghidEventTap)
+        sink.post(e)
     }
 }

@@ -36,13 +36,7 @@ struct PreferencesView: View {
         Binding(get: { effectiveNatural() },
                 set: { model.config.naturalScrolling = $0; model.commit() })
     }
-    private func effectiveNatural() -> Bool {
-        if let v = model.config.naturalScrolling { return v }
-        if UserDefaults.standard.object(forKey: "com.apple.swipescrolldirection") != nil {
-            return UserDefaults.standard.bool(forKey: "com.apple.swipescrolldirection")
-        }
-        return true
-    }
+    private func effectiveNatural() -> Bool { model.config.effectiveNaturalScrolling() }
 
     var body: some View {
         Form {

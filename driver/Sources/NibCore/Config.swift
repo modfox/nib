@@ -18,7 +18,7 @@ public struct NibConfig: Codable, Sendable, Equatable {
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        var def = NibConfig()
+        let def = NibConfig()
         touchEnabled     = try c.decodeIfPresent(Bool.self, forKey: .touchEnabled) ?? def.touchEnabled
         palmRejection    = try c.decodeIfPresent(Bool.self, forKey: .palmRejection) ?? def.palmRejection
         tapToClick       = try c.decodeIfPresent(Bool.self, forKey: .tapToClick) ?? def.tapToClick
@@ -28,7 +28,16 @@ public struct NibConfig: Codable, Sendable, Equatable {
         lowerBarrel      = try c.decodeIfPresent(PenButtonAction.self, forKey: .lowerBarrel) ?? def.lowerBarrel
         upperBarrel      = try c.decodeIfPresent(PenButtonAction.self, forKey: .upperBarrel) ?? def.upperBarrel
         pressureCurve    = try c.decodeIfPresent(PressureCurve.self, forKey: .pressureCurve) ?? def.pressureCurve
-        _ = def
+    }
+
+    /// Natural scrolling to apply: the explicit override if set, else the system setting
+    /// (`com.apple.swipescrolldirection`, read from `defaults`; macOS defaults to true).
+    public func effectiveNaturalScrolling(defaults: UserDefaults = .standard) -> Bool {
+        if let v = naturalScrolling { return v }
+        if defaults.object(forKey: "com.apple.swipescrolldirection") != nil {
+            return defaults.bool(forKey: "com.apple.swipescrolldirection")
+        }
+        return true
     }
 
     public static var fileURL: URL {

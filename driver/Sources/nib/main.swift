@@ -35,22 +35,12 @@ func displayReconfigCallback(_ display: CGDirectDisplayID,
 }
 
 /// Locate the tablet's own display so the pen maps 1:1 onto the tablet surface.
-/// Match on the profile's native panel resolution; fall back to the main display.
+/// Matched by EDID, then native panel size (see DisplayLocator); falls back to the main display.
 func cintiqDisplayBounds(_ profile: DeviceProfile) -> CGRect {
-    guard let panel = profile.panelSize else { return CGDisplayBounds(CGMainDisplayID()) }
-    var count: UInt32 = 0
-    CGGetActiveDisplayList(0, nil, &count)
-    var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
-    CGGetActiveDisplayList(count, &ids, &count)
-    for id in ids {
-        // Match on native pixel resolution; the panel may run HiDPI, so CGDisplayBounds
-        // returns the point-space rect used for cursor mapping.
-        guard let mode = CGDisplayCopyDisplayMode(id) else { continue }
-        if mode.pixelWidth == Int(panel.width) && mode.pixelHeight == Int(panel.height) {
-            let b = CGDisplayBounds(id)
-            FileHandle.standardError.write("nib: mapping to tablet display id=\(id) bounds=\(b)\n".data(using: .utf8)!)
-            return b
-        }
+    if let id = DisplayLocator.tabletDisplayID(for: profile) {
+        let b = CGDisplayBounds(id)
+        FileHandle.standardError.write("nib: mapping to tablet display id=\(id) bounds=\(b)\n".data(using: .utf8)!)
+        return b
     }
     FileHandle.standardError.write("nib: tablet display not found, using main display\n".data(using: .utf8)!)
     return CGDisplayBounds(CGMainDisplayID())
@@ -119,36 +109,11 @@ case "calibrate":
     let profile = detectProfile()
     let bounds = cintiqDisplayBounds(profile)
     func cerr(_ s: String) { FileHandle.standardError.write((s + "\n").data(using: .utf8)!) }
-    let p1 = CGPoint(x: bounds.minX + 0.15 * bounds.width, y: bounds.minY + 0.15 * bounds.height)
-    let p2 = CGPoint(x: bounds.minX + 0.85 * bounds.width, y: bounds.minY + 0.85 * bounds.height)
-
-    var state = 0            // 0: hold P1, 1: lift, 2: hold P2
-    var buf: [(Int, Int)] = []
-    let K = 40, tol = 1200   // samples to confirm a steady hold; raw-unit spread tolerance
-    var rawP1 = (0.0, 0.0)
-
-    func mean(_ b: [(Int, Int)]) -> (Double, Double) {
-        (b.reduce(0.0) { $0 + Double($1.0) } / Double(b.count),
-         b.reduce(0.0) { $0 + Double($1.1) } / Double(b.count))
-    }
-    func stable(_ b: [(Int, Int)]) -> Bool {
-        let xs = b.map { $0.0 }, ys = b.map { $0.1 }
-        return (xs.max()! - xs.min()! < tol) && (ys.max()! - ys.min()! < tol)
-    }
-    func finish(_ rawP2: (Double, Double)) {
-        let sx = (Double(p2.x) - Double(p1.x)) / (rawP2.0 - rawP1.0)
-        let ox = Double(p1.x) - sx * rawP1.0            // screenX = sx*raw + ox
-        let sy = (Double(p2.y) - Double(p1.y)) / (rawP2.1 - rawP1.1)
-        let oy = Double(p1.y) - sy * rawP1.1
-        let cal = Calibration(
-            xMin: (Double(bounds.minX) - ox) / sx, xMax: (Double(bounds.maxX) - ox) / sx,
-            yMin: (Double(bounds.minY) - oy) / sy, yMax: (Double(bounds.maxY) - oy) / sy)
-        do { try cal.save(); cerr("nib: calibration saved to \(Calibration.fileURL.path)") }
-        catch { cerr("nib: save failed: \(error)") }
-        cerr(String(format: "nib: active raw range X[%.0f..%.0f] Y[%.0f..%.0f]",
-                    cal.xMin, cal.xMax, cal.yMin, cal.yMax))
-        exit(0)
-    }
+    // Targets as fractions of the display (the solver's space) and as screen points.
+    let f1 = CGPoint(x: 0.15, y: 0.15), f2 = CGPoint(x: 0.85, y: 0.85)
+    let p1 = CGPoint(x: bounds.minX + f1.x * bounds.width, y: bounds.minY + f1.y * bounds.height)
+    let p2 = CGPoint(x: bounds.minX + f2.x * bounds.width, y: bounds.minY + f2.y * bounds.height)
+    var solver = CalibrationSolver(target1: f1, target2: f2, pen: profile.pen)
 
     CGWarpMouseCursorPosition(p1)
     cerr("nib: CALIBRATION — place the pen tip exactly on the cursor dot (upper-left area) and hold still…")
@@ -158,18 +123,22 @@ case "calibrate":
         onAttach: { enableNativeMode(calTransport, profile) },
         onReport: { reportID, payload in
             guard reportID == profile.pen.reportID, let s = PenReport.parse(payload, profile.pen) else { return }
-            if !s.tipDown || !s.inRange {
-                if state == 1 { state = 2; CGWarpMouseCursorPosition(p2)
-                    cerr("nib: point 1 captured. Now align the pen to the cursor (lower-right area) and hold…") }
-                buf.removeAll(); return
-            }
-            guard state == 0 || state == 2 else { buf.removeAll(); return }
-            buf.append((s.x, s.y)); if buf.count > K { buf.removeFirst() }
-            if buf.count == K && stable(buf) {
-                let m = mean(buf)
-                if state == 0 { rawP1 = m; state = 1; buf.removeAll()
-                    cerr("nib: got point 1 raw=(\(Int(m.0)),\(Int(m.1))). Lift the pen.") }
-                else { finish(m) }
+            switch solver.feed(s) {
+            case .none: break
+            case .firstCaptured:
+                cerr("nib: got point 1. Lift the pen.")
+            case .awaitingSecond:
+                CGWarpMouseCursorPosition(p2)
+                cerr("nib: point 1 captured. Now align the pen to the cursor (lower-right area) and hold…")
+            case .finished(let cal):
+                do { try cal.save(); cerr("nib: calibration saved to \(Calibration.fileURL.path)") }
+                catch { cerr("nib: save failed: \(error)") }
+                cerr(String(format: "nib: active raw range X[%.0f..%.0f] Y[%.0f..%.0f]",
+                            cal.xMin, cal.xMax, cal.yMin, cal.yMax))
+                exit(0)
+            case .rejected:
+                CGWarpMouseCursorPosition(p1)
+                cerr("nib: calibration rejected (points too close or reversed) — try again from the upper-left dot")
             }
         })
     calTransport.start()
@@ -207,6 +176,7 @@ case "run":
             log("no calibration found, using full pen range")
         }
         emitter.setMapping(penMap)
+        emitter.setProfile(profile)
         touchGesture.tapMapping = DisplayMapping(
             targetBounds: bounds,
             xMin: 0, xMax: Double(profile.touch.xLogicalMax),
@@ -215,7 +185,7 @@ case "run":
 
     // In-app calibration: captures raw pen coords at two on-screen targets, then applies
     // them against the currently-active device's display bounds.
-    let calibration = CalibrationController(apply: { cal in
+    let calibration = CalibrationController(profile: { activeProfile }, apply: { cal in
         let m = DisplayMapping(targetBounds: cintiqDisplayBounds(activeProfile),
                                xMin: cal.xMin, xMax: cal.xMax, yMin: cal.yMin, yMax: cal.yMax)
         emitter.setMapping(m)
@@ -235,6 +205,7 @@ case "run":
             touchGesture.handle(f)
         },
         onProfileChange: { p in
+            emitter.reset()   // release anything held by the previous/unplugged device
             if let p = p {
                 activeProfile = p
                 log("now driving \(p.name)")
@@ -264,17 +235,26 @@ case "run":
     app.setActivationPolicy(.accessory)
     let statusBar = StatusBarController(config: config, emitter: emitter, touch: touchGesture,
                                         calibration: calibration,
+                                        beforeCalibration: { emitter.reset() },
                                         calibrationBounds: { cintiqDisplayBounds(activeProfile) })
     _ = statusBar   // retained for the process lifetime
     app.run()
 
 case "capture":
     // Raw multi-interface HID dump for bringing up a NEW device. Opens every connected
-    // interface of each known vendor, sends the best-guess Wacom enable sequences, and
-    // dumps every report as raw hex tagged by PID. Run this, then perform the labeled
-    // gestures from docs/ADDING-A-DEVICE.md (corners, hard press, lift, 1/2/3-finger
-    // touches) to produce a capture bundle for a new DeviceProfile + fixtures.
+    // interface of each known vendor and dumps every report as raw hex tagged by PID; with
+    // --send-enable it first sends the best-guess (DTH2420) Wacom enable sequences. Run
+    // this, then perform the labeled gestures from docs/ADDING-A-DEVICE.md (corners, hard
+    // press, lift, 1/2/3-finger touches) to produce a capture bundle for a new
+    // DeviceProfile + fixtures.
+    // Passive by default: the DTH2420's vendor reports may mean something else on another
+    // model, so they are only sent when the contributor opts in with --send-enable.
+    let sendEnable = args.dropFirst(2).contains("--send-enable")
     FileHandle.standardError.write("nib: CAPTURE mode — raw report dump for a new device (Ctrl-C to stop)\n".data(using: .utf8)!)
+    FileHandle.standardError.write((sendEnable
+        ? "nib: --send-enable: sending the DTH2420 mode-switch + touch-enable to every interface\n"
+        : "nib: passive capture (nothing is sent to the tablet; add --send-enable if the pen shows no reports)\n")
+        .data(using: .utf8)!)
     let guess = DeviceProfile.dth2420   // best-guess enable sequences for the Wacom family
     var ifaces: [(vendor: UInt16, pid: UInt16)] = []
     for v in Set(DeviceProfile.all.map({ $0.vendorID })) {
@@ -295,6 +275,10 @@ case "capture":
         t = HIDTransport(
             vendorID: iface.vendor, productID: iface.pid,
             onAttach: {
+                guard sendEnable else {
+                    FileHandle.standardError.write(String(format: "nib: opened 0x%04x (passive)\n", iface.pid).data(using: .utf8)!)
+                    return
+                }
                 FileHandle.standardError.write(String(format: "nib: opened 0x%04x; sending best-guess enable\n", iface.pid).data(using: .utf8)!)
                 _ = t.applyFeatures(guess.initSequence)   // best effort; failures are expected on non-pen interfaces
                 _ = t.applyOutputs(guess.touchEnable)      // best effort; failures are expected on non-touch interfaces
@@ -311,6 +295,6 @@ case "capture":
     CFRunLoopRun()
 
 default:
-    FileHandle.standardError.write("usage: nib [run|log|touchlog|calibrate|capture]\n".data(using: .utf8)!)
+    FileHandle.standardError.write("usage: nib [run|log|touchlog|calibrate|capture [--send-enable]]\n".data(using: .utf8)!)
     exit(2)
 }
