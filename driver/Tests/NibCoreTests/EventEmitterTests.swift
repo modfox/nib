@@ -14,6 +14,22 @@ final class EventEmitterTests: XCTestCase {
                      sink: sink)
     }
 
+    func testEraserContactIsAClick() {
+        let sink = RecordingSink(), em = makeEmitter(sink)
+        var s = sample(); s.inverted = true
+        em.handle(s)                                        // eraser hovering
+        var down = s; down.eraser = true; down.pressure = 3000
+        em.handle(down); em.handle(down)                    // eraser pressed (Tip bit stays 0)
+        em.handle(s)                                        // lifted
+        XCTAssertEqual(sink.clicks.map { $0.type }, [.leftMouseDown, .leftMouseUp])
+        XCTAssertTrue(sink.types.contains(.leftMouseDragged))
+        let prox = sink.events.first { $0.type == .tabletProximity }!
+        XCTAssertEqual(prox.getIntegerValueField(.tabletProximityEventPointerType), 3)
+        let press = sink.events.first { $0.type == .leftMouseDown }!
+        XCTAssertGreaterThan(press.getDoubleValueField(.tabletEventPointPressure), 0)
+        XCTAssertEqual(press.getIntegerValueField(.tabletEventPointButtons) & 0x1, 1)
+    }
+
     func testLeavingProximityWithTipDownReleasesTip() {
         let sink = RecordingSink(), em = makeEmitter(sink)
         em.handle(sample(tip: true))
