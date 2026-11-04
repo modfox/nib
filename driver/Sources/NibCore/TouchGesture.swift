@@ -67,6 +67,12 @@ public final class TouchGestureEngine {
     }
 
     private let sink: EventSink
+    /// HID-state source, like real input (see `EventEmitter.source`).
+    private let source: CGEventSource? = {
+        let s = CGEventSource(stateID: .hidSystemState)
+        s?.localEventsSuppressionInterval = 0   // never mute the keyboard/trackpad after posting
+        return s
+    }()
     private let now: () -> TimeInterval
     /// Performs a three-finger swipe given the arrow key code (123 ← / 124 → / 125 ↓ / 126 ↑).
     /// Defaults to Control+arrow via System Events; tests substitute a recorder.
@@ -116,7 +122,7 @@ public final class TouchGestureEngine {
         // Plain pixel scroll (horizontal + vertical). Phased/gesture scroll for Safari
         // swipe-navigation is a stretch goal — it felt janky, so we keep simple scrolling.
         guard abs(dx) >= 1 || abs(dy) >= 1 else { return }
-        guard let e = CGEvent(scrollWheelEvent2Source: nil, units: .pixel,
+        guard let e = CGEvent(scrollWheelEvent2Source: source, units: .pixel,
                               wheelCount: 2, wheel1: Int32(dy), wheel2: Int32(dx), wheel3: 0)
         else { return }
         sink.post(e)
@@ -155,7 +161,7 @@ public final class TouchGestureEngine {
         let pt = m.point(x: x, y: y)
         let clicks = tapClicks.down(at: pt, time: now())
         for type in [CGEventType.leftMouseDown, .leftMouseUp] {
-            guard let e = CGEvent(mouseEventSource: nil, mouseType: type,
+            guard let e = CGEvent(mouseEventSource: source, mouseType: type,
                                   mouseCursorPosition: pt, mouseButton: .left) else { continue }
             e.setIntegerValueField(.mouseEventClickState, value: Int64(clicks))
             sink.post(e)
