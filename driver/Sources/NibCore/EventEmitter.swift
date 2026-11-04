@@ -136,12 +136,14 @@ public final class EventEmitter {
     private func postPointer(_ s: PenSample) {
         let pt = mapping.point(x: s.x, y: s.y)
 
+        // Contact: the eraser end reports touch via the Eraser bit, not Tip Switch.
+        let contact = s.tipDown || s.eraser
         let type: CGEventType
-        if s.tipDown && !wasTipDown { type = .leftMouseDown }
-        else if !s.tipDown && wasTipDown { type = .leftMouseUp }
-        else if s.tipDown { type = .leftMouseDragged }
+        if contact && !wasTipDown { type = .leftMouseDown }
+        else if !contact && wasTipDown { type = .leftMouseUp }
+        else if contact { type = .leftMouseDragged }
         else { type = .mouseMoved }
-        wasTipDown = s.tipDown
+        wasTipDown = contact
         if type == .leftMouseDown { tipClickState = tipClicks.down(at: pt, time: now()) }
 
         guard let e = CGEvent(mouseEventSource: nil, mouseType: type,
@@ -167,7 +169,7 @@ public final class EventEmitter {
         e.setIntegerValueField(.tabletEventDeviceID, value: Int64(deviceID))
         // Button mask: bit0 tip, bit1 barrel, bit2 secondary barrel.
         var buttons: Int64 = 0
-        if s.tipDown { buttons |= 0x1 }
+        if contact { buttons |= 0x1 }
         if s.barrelButton { buttons |= 0x2 }
         if s.secondaryBarrel { buttons |= 0x4 }
         e.setIntegerValueField(.tabletEventPointButtons, value: buttons)
