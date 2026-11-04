@@ -17,6 +17,8 @@ public final class EventEmitter {
     private var wasTipDown = false
     private var wasBarrel = false
     private var wasSecondary = false
+    private var lastPoint = CGPoint.zero
+    private var lastInverted = false
     private let deviceID: UInt16
     private let vendorID: UInt16 = 0x056a
     private let pressureMax = Double(PenSample.pressureLogicalMax)
@@ -43,24 +45,35 @@ public final class EventEmitter {
     public func handle(_ s: PenSample) {
         // Proximity transitions -> tablet proximity events.
         if s.inRange && !wasInProximity {
-            postProximity(entering: true, sample: s)
+            postProximity(entering: true, inverted: s.inverted)
             wasInProximity = true
         }
 
         if s.inRange {
+            lastPoint = mapping.point(x: s.x, y: s.y)
+            lastInverted = s.inverted
             postPointer(s)
             handleButtons(s)
         }
 
         if !s.inRange && wasInProximity {
-            // Release any held side buttons before leaving proximity.
-            let pt = mapping.point(x: s.x, y: s.y)
-            if wasBarrel { postButton(lowerBarrelAction, down: false, at: pt); wasBarrel = false }
-            if wasSecondary { postButton(upperBarrelAction, down: false, at: pt); wasSecondary = false }
-            postProximity(entering: false, sample: s)
-            wasInProximity = false
-            wasTipDown = false
+            reset()
         }
+    }
+
+    /// Release everything currently held (tip, side buttons) and leave proximity, at the
+    /// last in-range position. Called on proximity exit, and by the app when the tablet
+    /// detaches or calibration takes over the pen stream, so no button is left "stuck".
+    public func reset() {
+        let pt = lastPoint
+        if wasTipDown, let e = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp,
+                                       mouseCursorPosition: pt, mouseButton: .left) {
+            sink.post(e)
+        }
+        if wasBarrel { postButton(lowerBarrelAction, down: false, at: pt) }
+        if wasSecondary { postButton(upperBarrelAction, down: false, at: pt) }
+        if wasInProximity { postProximity(entering: false, inverted: lastInverted) }
+        wasTipDown = false; wasBarrel = false; wasSecondary = false; wasInProximity = false
     }
 
     // MARK: - Side buttons
@@ -132,13 +145,13 @@ public final class EventEmitter {
 
     // MARK: - Proximity
 
-    private func postProximity(entering: Bool, sample s: PenSample) {
+    private func postProximity(entering: Bool, inverted: Bool) {
         guard let e = CGEvent(source: nil) else { return }
         e.type = .tabletProximity
         e.setIntegerValueField(.tabletProximityEventVendorID, value: Int64(vendorID))
         e.setIntegerValueField(.tabletProximityEventDeviceID, value: Int64(deviceID))
         e.setIntegerValueField(.tabletProximityEventPointerType,
-                               value: s.inverted ? 3 /*eraser*/ : 1 /*pen*/)
+                               value: inverted ? 3 /*eraser*/ : 1 /*pen*/)
         e.setIntegerValueField(.tabletProximityEventEnterProximity, value: entering ? 1 : 0)
         // Advertise capabilities so apps enable pressure/tilt. Bits (NX_TABLET_CAPABILITY_*):
         // deviceID 0x01 | absX 0x02 | absY 0x04 | pressure 0x40 | orientation/tilt 0x100.

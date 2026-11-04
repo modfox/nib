@@ -235,6 +235,7 @@ case "run":
             touchGesture.handle(f)
         },
         onProfileChange: { p in
+            emitter.reset()   // release anything held by the previous/unplugged device
             if let p = p {
                 activeProfile = p
                 log("now driving \(p.name)")
@@ -264,6 +265,7 @@ case "run":
     app.setActivationPolicy(.accessory)
     let statusBar = StatusBarController(config: config, emitter: emitter, touch: touchGesture,
                                         calibration: calibration,
+                                        beforeCalibration: { emitter.reset() },
                                         calibrationBounds: { cintiqDisplayBounds(activeProfile) })
     _ = statusBar   // retained for the process lifetime
     app.run()

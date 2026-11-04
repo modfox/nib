@@ -13,20 +13,26 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private let calibration: CalibrationController
     /// Bounds of the active tablet's display, resolved live (the active profile can change).
     private let calibrationBounds: () -> CGRect
+    /// Runs before calibration takes over the pen stream (releases held pen buttons).
+    private let beforeCalibration: () -> Void
 
     private static let speeds: [(String, Double)] = [("Slow", 0.20), ("Medium", 0.35), ("Fast", 0.55)]
 
     init(config: NibConfig, emitter: EventEmitter, touch: TouchGestureEngine,
-         calibration: CalibrationController, calibrationBounds: @escaping () -> CGRect) {
+         calibration: CalibrationController, beforeCalibration: @escaping () -> Void,
+         calibrationBounds: @escaping () -> CGRect) {
         self.config = config
         self.emitter = emitter
         self.touch = touch
         self.calibration = calibration
         self.calibrationBounds = calibrationBounds
+        self.beforeCalibration = beforeCalibration
         self.item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         self.prefsModel = PrefsModel(config: config)
         self.prefs = PreferencesWindowController(model: prefsModel,
-                                                 onRecalibrate: { calibration.begin(bounds: calibrationBounds()) })
+                                                 onRecalibrate: {
+            beforeCalibration(); calibration.begin(bounds: calibrationBounds())
+        })
         super.init()
         if let button = item.button {
             button.image = NSImage(systemSymbolName: "hand.draw", accessibilityDescription: "Nib")
@@ -164,6 +170,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         NSWorkspace.shared.open(NibConfig.fileURL)
     }
     @objc private func recalibrate() {
+        beforeCalibration()
         calibration.begin(bounds: calibrationBounds())
     }
     /// Restart via launchd: kickstart -k kills this instance and relaunches a fresh one.
