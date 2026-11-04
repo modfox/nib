@@ -30,6 +30,52 @@ final class EventEmitterTests: XCTestCase {
         XCTAssertEqual(press.getIntegerValueField(.tabletEventPointButtons) & 0x1, 1)
     }
 
+    func testWillPressFiresOncePerPress() {
+        let sink = RecordingSink(), em = makeEmitter(sink)
+        var presses: [CGPoint] = []
+        em.willPress = { presses.append($0) }
+        em.handle(sample(tip: true)); em.handle(sample(tip: true)); em.handle(sample())
+        var eraser = sample(); eraser.inverted = true; eraser.eraser = true
+        em.handle(eraser)
+        XCTAssertEqual(presses.count, 2)
+        XCTAssertEqual(presses.first, sink.clicks.first?.location)
+    }
+
+    func testEventsComeFromTheHIDSystemState() {
+        let sink = RecordingSink(), em = makeEmitter(sink)
+        em.handle(sample(tip: true))                        // proximity + mouse-down
+        XCTAssertFalse(sink.events.isEmpty)
+        for e in sink.events {
+            XCTAssertEqual(e.getIntegerValueField(.eventSourceStateID),
+                           Int64(CGEventSourceStateID.hidSystemState.rawValue))
+        }
+    }
+
+    func testReassertProximityAnnouncesCurrentPointerType() {
+        let sink = RecordingSink(), em = makeEmitter(sink)
+        em.reassertProximity()                              // out of range: nothing
+        XCTAssertTrue(sink.events.isEmpty)
+        var s = sample(); s.inverted = true
+        em.handle(s)
+        sink.clear()
+        em.reassertProximity()
+        XCTAssertEqual(sink.types, [.tabletProximity])
+        XCTAssertEqual(sink.events[0].getIntegerValueField(.tabletProximityEventEnterProximity), 1)
+        XCTAssertEqual(sink.events[0].getIntegerValueField(.tabletProximityEventPointerType), 3)
+    }
+
+    func testFlippingPenInRangeReannouncesProximity() {
+        let sink = RecordingSink(), em = makeEmitter(sink)
+        em.handle(sample())                                 // pen tip enters
+        var e = sample(); e.inverted = true
+        em.handle(e)                                        // eraser, no exit in between
+        let prox = sink.events.filter { $0.type == .tabletProximity }
+        XCTAssertEqual(prox.map { $0.getIntegerValueField(.tabletProximityEventPointerType) }, [1, 3])
+        sink.clear()
+        em.handle(e)                                        // steady state: no repeat
+        XCTAssertFalse(sink.types.contains(.tabletProximity))
+    }
+
     func testLeavingProximityWithTipDownReleasesTip() {
         let sink = RecordingSink(), em = makeEmitter(sink)
         em.handle(sample(tip: true))

@@ -4,6 +4,32 @@ import ApplicationServices
 import AppKit
 import NibCore
 
+/// Activate the app that owns the normal window under `pt`, if it isn't already frontmost.
+/// A pen press raises a background window, but macOS doesn't let a synthesized click activate
+/// its app, so the app never gets proximity events and ignores the pen's tool (pen vs eraser).
+/// Uses Accessibility (already granted for posting events) rather than relying on the click.
+func activateApp(under pt: CGPoint) {
+    let opts: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+    guard let windows = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: Any]] else { return }
+    for w in windows {                                       // front to back
+        guard let b = w[kCGWindowBounds as String] as? NSDictionary,
+              let r = CGRect(dictionaryRepresentation: b), r.contains(pt) else { continue }
+        if let alpha = w[kCGWindowAlpha as String] as? Double, alpha == 0 { continue }
+        // Topmost visible window under the pen. Only normal windows (layer 0); the menu bar,
+        // Dock, panels and overlays don't take focus from the frontmost app.
+        guard (w[kCGWindowLayer as String] as? Int) == 0,
+              let pid = w[kCGWindowOwnerPID as String] as? pid_t,
+              pid != getpid(),
+              pid != NSWorkspace.shared.frontmostApplication?.processIdentifier else { return }
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, 0.25)            // a hung app mustn't stall the pen
+        if AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue) != .success {
+            NSRunningApplication(processIdentifier: pid)?.activate()
+        }
+        return
+    }
+}
+
 // Resolve the device Nib should drive from whatever tablet is actually plugged in; fall
 // back to the reference device if nothing recognized is connected. All model-specific
 // identity, report layouts, mode-switch and touch-enable live in the profile — see
@@ -160,6 +186,7 @@ case "run":
     // Start with an identity mapping; DeviceManager rebuilds it once a profile resolves.
     let emitter = EventEmitter(mapping: DisplayMapping(targetBounds: CGDisplayBounds(CGMainDisplayID())))
     let touchGesture = TouchGestureEngine()
+    emitter.willPress = { activateApp(under: $0) }
 
     // (Re)build the pen + touch coordinate mappings for a given tablet. Called whenever the
     // active device changes, and after an in-app calibration.
@@ -238,6 +265,13 @@ case "run":
                                         beforeCalibration: { emitter.reset() },
                                         calibrationBounds: { cintiqDisplayBounds(activeProfile) })
     _ = statusBar   // retained for the process lifetime
+
+    // Proximity events only reach the frontmost app; re-announce the pen to whichever app
+    // just became active so it picks up the current tool (pen vs eraser).
+    let activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+        forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+    ) { _ in emitter.reassertProximity() }
+    _ = activationObserver
     app.run()
 
 case "capture":

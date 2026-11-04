@@ -31,6 +31,10 @@ public final class EventEmitter {
     public var pressureCurve: PressureCurve = .linear
     /// Reports raw normalized pressure [0,1] each pointer event (for the prefs preview).
     public var pressureObserver: ((Double) -> Void)?
+    /// Called with the screen point just before each tip (or eraser) press is posted. The app
+    /// uses it to activate the app under the pen: synthesized clicks raise a background
+    /// window but macOS doesn't let them activate its app.
+    public var willPress: ((CGPoint) -> Void)?
 
     /// Multi-click detection for the tip and each side button.
     private var tipClicks = ClickCounter(), lowerClicks = ClickCounter(), upperClicks = ClickCounter()
@@ -45,6 +49,15 @@ public final class EventEmitter {
         }
     }
 
+    /// Events are created from the HID system state (sourceStateID 1), like real hardware
+    /// input. With a nil source they are tagged as synthetic session events, and apps clicked
+    /// with the pen did not activate (macOS only lets an app activate itself on a click it
+    /// trusts as user input).
+    private let source: CGEventSource? = {
+        let s = CGEventSource(stateID: .hidSystemState)
+        s?.localEventsSuppressionInterval = 0   // never mute the keyboard/trackpad after posting
+        return s
+    }()
     private let sink: EventSink
     private let now: () -> TimeInterval
 
@@ -70,6 +83,9 @@ public final class EventEmitter {
         if s.inRange && !wasInProximity {
             postProximity(entering: true, inverted: s.inverted)
             wasInProximity = true
+        } else if s.inRange && s.inverted != lastInverted {
+            // Pen end changed without a reported exit: re-announce the new pointer type.
+            postProximity(entering: true, inverted: s.inverted)
         }
 
         if s.inRange {
@@ -89,7 +105,7 @@ public final class EventEmitter {
     /// detaches or calibration takes over the pen stream, so no button is left "stuck".
     public func reset() {
         let pt = lastPoint
-        if wasTipDown, let e = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp,
+        if wasTipDown, let e = CGEvent(mouseEventSource: source, mouseType: .leftMouseUp,
                                        mouseCursorPosition: pt, mouseButton: .left) {
             e.setIntegerValueField(.mouseEventClickState, value: Int64(tipClickState))
             sink.post(e)
@@ -98,6 +114,16 @@ public final class EventEmitter {
         if wasSecondary { postButton(upperBarrelAction, down: false, at: pt, clicks: upperClickState) }
         if wasInProximity { postProximity(entering: false, inverted: lastInverted) }
         wasTipDown = false; wasBarrel = false; wasSecondary = false; wasInProximity = false
+    }
+
+    /// Re-send proximity-enter for the pen currently in range. macOS delivers proximity
+    /// events only to the app frontmost at the time, so an app activated while the pen is
+    /// already in range never learns the pointer type (pen vs eraser) or even that a tablet
+    /// pointer is present: tablet input is then ignored or uses a stale tool. Call this when
+    /// the frontmost application changes. No-op when the pen is out of range.
+    public func reassertProximity() {
+        guard wasInProximity else { return }
+        postProximity(entering: true, inverted: lastInverted)
     }
 
     // MARK: - Side buttons
@@ -125,7 +151,7 @@ public final class EventEmitter {
         case .middleClick: type = down ? .otherMouseDown : .otherMouseUp;  button = .center
         case .leftClick:   type = down ? .leftMouseDown  : .leftMouseUp;   button = .left
         }
-        guard let e = CGEvent(mouseEventSource: nil, mouseType: type,
+        guard let e = CGEvent(mouseEventSource: source, mouseType: type,
                               mouseCursorPosition: pt, mouseButton: button) else { return }
         e.setIntegerValueField(.mouseEventClickState, value: Int64(clicks))
         sink.post(e)
@@ -144,9 +170,12 @@ public final class EventEmitter {
         else if contact { type = .leftMouseDragged }
         else { type = .mouseMoved }
         wasTipDown = contact
-        if type == .leftMouseDown { tipClickState = tipClicks.down(at: pt, time: now()) }
+        if type == .leftMouseDown {
+            tipClickState = tipClicks.down(at: pt, time: now())
+            willPress?(pt)
+        }
 
-        guard let e = CGEvent(mouseEventSource: nil, mouseType: type,
+        guard let e = CGEvent(mouseEventSource: source, mouseType: type,
                               mouseCursorPosition: pt, mouseButton: .left) else { return }
         if type != .mouseMoved {
             e.setIntegerValueField(.mouseEventClickState, value: Int64(tipClickState))
@@ -179,7 +208,7 @@ public final class EventEmitter {
     // MARK: - Proximity
 
     private func postProximity(entering: Bool, inverted: Bool) {
-        guard let e = CGEvent(source: nil) else { return }
+        guard let e = CGEvent(source: source) else { return }
         e.type = .tabletProximity
         e.setIntegerValueField(.tabletProximityEventVendorID, value: Int64(vendorID))
         e.setIntegerValueField(.tabletProximityEventDeviceID, value: Int64(deviceID))
