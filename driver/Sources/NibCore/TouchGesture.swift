@@ -28,6 +28,12 @@ public final class TouchGestureEngine {
     private var tapActive = false
     private var tapStart: (x: Double, y: Double, t: TimeInterval) = (0, 0, 0)
     private var tapMoved = 0.0
+    private var tapClicks = ClickCounter(maxDistance: 20)   // fingers land less precisely than a pen
+    /// System double-click interval (the app sets it from NSEvent.doubleClickInterval).
+    public var doubleClickInterval: TimeInterval {
+        get { tapClicks.interval }
+        set { tapClicks.interval = newValue }
+    }
 
     /// Three-finger swipe → Mission Control shortcuts (switch spaces / Mission Control /
     /// App Exposé). Uses the default macOS keyboard shortcuts, so they must be enabled
@@ -147,9 +153,11 @@ public final class TouchGestureEngine {
     private func emitTapClick(x: Int, y: Int) {
         guard let m = tapMapping else { return }
         let pt = m.point(x: x, y: y)
+        let clicks = tapClicks.down(at: pt, time: now())
         for type in [CGEventType.leftMouseDown, .leftMouseUp] {
             guard let e = CGEvent(mouseEventSource: nil, mouseType: type,
                                   mouseCursorPosition: pt, mouseButton: .left) else { continue }
+            e.setIntegerValueField(.mouseEventClickState, value: Int64(clicks))
             sink.post(e)
         }
     }

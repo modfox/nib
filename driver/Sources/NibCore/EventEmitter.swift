@@ -31,13 +31,29 @@ public final class EventEmitter {
     /// Reports raw normalized pressure [0,1] each pointer event (for the prefs preview).
     public var pressureObserver: ((Double) -> Void)?
 
+    /// Multi-click detection for the tip and each side button.
+    private var tipClicks = ClickCounter(), lowerClicks = ClickCounter(), upperClicks = ClickCounter()
+    /// Click state of the current tip press / held side buttons (carried on drags and ups).
+    private var tipClickState = 1, lowerClickState = 1, upperClickState = 1
+    /// System double-click interval (the app sets it from NSEvent.doubleClickInterval).
+    public var doubleClickInterval: TimeInterval = 0.5 {
+        didSet {
+            tipClicks.interval = doubleClickInterval
+            lowerClicks.interval = doubleClickInterval
+            upperClicks.interval = doubleClickInterval
+        }
+    }
+
     private let sink: EventSink
+    private let now: () -> TimeInterval
 
     public init(mapping: DisplayMapping, deviceID: UInt16 = 1,
-                sink: EventSink = SystemEventSink()) {
+                sink: EventSink = SystemEventSink(),
+                now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
         self.mapping = mapping
         self.deviceID = deviceID
         self.sink = sink
+        self.now = now
     }
 
     public func setMapping(_ m: DisplayMapping) { self.mapping = m }
@@ -68,10 +84,11 @@ public final class EventEmitter {
         let pt = lastPoint
         if wasTipDown, let e = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp,
                                        mouseCursorPosition: pt, mouseButton: .left) {
+            e.setIntegerValueField(.mouseEventClickState, value: Int64(tipClickState))
             sink.post(e)
         }
-        if wasBarrel { postButton(lowerBarrelAction, down: false, at: pt) }
-        if wasSecondary { postButton(upperBarrelAction, down: false, at: pt) }
+        if wasBarrel { postButton(lowerBarrelAction, down: false, at: pt, clicks: lowerClickState) }
+        if wasSecondary { postButton(upperBarrelAction, down: false, at: pt, clicks: upperClickState) }
         if wasInProximity { postProximity(entering: false, inverted: lastInverted) }
         wasTipDown = false; wasBarrel = false; wasSecondary = false; wasInProximity = false
     }
@@ -81,16 +98,18 @@ public final class EventEmitter {
     private func handleButtons(_ s: PenSample) {
         let pt = mapping.point(x: s.x, y: s.y)
         if s.barrelButton != wasBarrel {
-            postButton(lowerBarrelAction, down: s.barrelButton, at: pt)
+            if s.barrelButton { lowerClickState = lowerClicks.down(at: pt, time: now()) }
+            postButton(lowerBarrelAction, down: s.barrelButton, at: pt, clicks: lowerClickState)
             wasBarrel = s.barrelButton
         }
         if s.secondaryBarrel != wasSecondary {
-            postButton(upperBarrelAction, down: s.secondaryBarrel, at: pt)
+            if s.secondaryBarrel { upperClickState = upperClicks.down(at: pt, time: now()) }
+            postButton(upperBarrelAction, down: s.secondaryBarrel, at: pt, clicks: upperClickState)
             wasSecondary = s.secondaryBarrel
         }
     }
 
-    private func postButton(_ action: PenButtonAction, down: Bool, at pt: CGPoint) {
+    private func postButton(_ action: PenButtonAction, down: Bool, at pt: CGPoint, clicks: Int) {
         let type: CGEventType
         let button: CGMouseButton
         switch action {
@@ -101,6 +120,7 @@ public final class EventEmitter {
         }
         guard let e = CGEvent(mouseEventSource: nil, mouseType: type,
                               mouseCursorPosition: pt, mouseButton: button) else { return }
+        e.setIntegerValueField(.mouseEventClickState, value: Int64(clicks))
         sink.post(e)
     }
 
@@ -115,9 +135,13 @@ public final class EventEmitter {
         else if s.tipDown { type = .leftMouseDragged }
         else { type = .mouseMoved }
         wasTipDown = s.tipDown
+        if type == .leftMouseDown { tipClickState = tipClicks.down(at: pt, time: now()) }
 
         guard let e = CGEvent(mouseEventSource: nil, mouseType: type,
                               mouseCursorPosition: pt, mouseButton: .left) else { return }
+        if type != .mouseMoved {
+            e.setIntegerValueField(.mouseEventClickState, value: Int64(tipClickState))
+        }
 
         let rawPressure = Double(s.pressure) / pressureMax     // 0.0 ... 1.0
         pressureObserver?(rawPressure)

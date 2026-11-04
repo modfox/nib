@@ -76,6 +76,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         emitter.lowerBarrelAction = config.lowerBarrel
         emitter.upperBarrelAction = config.upperBarrel
         emitter.pressureCurve = config.pressureCurve
+        emitter.doubleClickInterval = NSEvent.doubleClickInterval
+        touch.doubleClickInterval = NSEvent.doubleClickInterval
     }
 
     /// Apply to the engines and persist. Also keeps the prefs window in sync.

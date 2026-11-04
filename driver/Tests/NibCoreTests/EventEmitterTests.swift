@@ -36,4 +36,15 @@ final class EventEmitterTests: XCTestCase {
         em.reset()                       // idempotent: nothing left to release
         XCTAssertTrue(sink.events.isEmpty)
     }
+
+    func testPenDoubleTapIsADoubleClick() {
+        let sink = RecordingSink(), clock = TestClock()
+        let em = EventEmitter(mapping: DisplayMapping(targetBounds: CGRect(x: 0, y: 0, width: 1920, height: 1080)),
+                              sink: sink, now: { clock.t })
+        em.handle(sample(tip: true)); em.handle(sample())
+        clock.advance(0.2)
+        em.handle(sample(tip: true)); em.handle(sample())
+        let states = sink.clicks.map { $0.getIntegerValueField(.mouseEventClickState) }
+        XCTAssertEqual(states, [1, 1, 2, 2])
+    }
 }

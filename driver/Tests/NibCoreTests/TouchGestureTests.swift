@@ -59,4 +59,14 @@ final class TouchGestureTests: XCTestCase {
         engine.handle(frame([]))
         XCTAssertTrue(sink.events.isEmpty)
     }
+
+    func testDoubleTapIsADoubleClick() {
+        for _ in 0..<2 {
+            engine.handle(frame([(7680, 4320)]))
+            clock.advance(0.1)
+            engine.handle(frame([]))
+            clock.advance(0.1)
+        }
+        XCTAssertEqual(sink.events.map { $0.getIntegerValueField(.mouseEventClickState) }, [1, 1, 2, 2])
+    }
 }
