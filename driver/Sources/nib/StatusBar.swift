@@ -57,13 +57,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     /// Effective natural-scrolling: explicit override, else the system setting.
-    private func effectiveNatural() -> Bool {
-        if let v = config.naturalScrolling { return v }
-        if UserDefaults.standard.object(forKey: "com.apple.swipescrolldirection") != nil {
-            return UserDefaults.standard.bool(forKey: "com.apple.swipescrolldirection")
-        }
-        return true
-    }
+    private func effectiveNatural() -> Bool { config.effectiveNaturalScrolling() }
 
     /// Push config into the live engines (no disk write).
     private func applyEngines() {

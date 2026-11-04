@@ -8,12 +8,13 @@ These are the remaining and possible enhancements.
       mode-switch and touch-enable live in a `DeviceProfile`, chosen at runtime from the
       connected hardware (with hotplug re-resolution). Adding a model is data, not decode
       code. Contribution workflow: `docs/ADDING-A-DEVICE.md`.
+- [x] **Developer ID signing + notarization** — a tagged release builds a signed,
+      notarized DMG (`driver/RELEASING.md`), so Nib installs on other Macs without a
+      self-signed certificate.
 
 ## Planned
 - [ ] **ExpressKeys / touch-ring** — the tablet's physical buttons and ring (pen reports
       `0x11` / `0x13`), mapped to shortcuts.
-- [ ] **Developer ID signing + notarization** — so Nib can be installed on other Macs
-      without setting up a self-signed certificate.
 - [ ] **More device profiles** — bring up additional Wacom models from contributed capture
       bundles (`docs/ADDING-A-DEVICE.md`).
 
