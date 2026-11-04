@@ -15,6 +15,8 @@ final class CalibrationController: ObservableObject {
     private var escMonitor: Any?
     private var bounds: CGRect = .zero
     private let apply: (Calibration) -> Void
+    /// The active device profile, used to locate the tablet's screen for the overlay.
+    private let profile: () -> DeviceProfile
 
     // Target positions as a fraction of the display (inset from the corners).
     private let p1 = CGPoint(x: 0.1, y: 0.1)
@@ -24,7 +26,10 @@ final class CalibrationController: ObservableObject {
     private var rawP1 = (0.0, 0.0)
     private let K = 40, tol = 1200
 
-    init(apply: @escaping (Calibration) -> Void) { self.apply = apply }
+    init(profile: @escaping () -> DeviceProfile, apply: @escaping (Calibration) -> Void) {
+        self.profile = profile
+        self.apply = apply
+    }
 
     func begin(bounds: CGRect) {
         self.bounds = bounds
@@ -82,18 +87,14 @@ final class CalibrationController: ObservableObject {
         close()
     }
 
-    /// The Cintiq's NSScreen (3840x2160 native), whose .frame is in Cocoa coordinates
-    /// — CGDisplayBounds is Quartz (top-left origin) and would place the window off-screen.
+    /// The tablet's NSScreen, whose .frame is in Cocoa coordinates — CGDisplayBounds is
+    /// Quartz (top-left origin) and would place the window off-screen.
     private func cintiqScreen() -> NSScreen? {
-        for s in NSScreen.screens {
-            if let num = s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber {
-                let id = CGDirectDisplayID(truncating: num)
-                if let mode = CGDisplayCopyDisplayMode(id), mode.pixelWidth == 3840, mode.pixelHeight == 2160 {
-                    return s
-                }
-            }
+        guard let id = DisplayLocator.tabletDisplayID(for: profile()) else { return nil }
+        return NSScreen.screens.first {
+            ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)
+                .map { CGDirectDisplayID(truncating: $0) } == id
         }
-        return nil
     }
 
     // Called on the main thread (HID transports + menu actions run on the main run loop).

@@ -35,22 +35,12 @@ func displayReconfigCallback(_ display: CGDirectDisplayID,
 }
 
 /// Locate the tablet's own display so the pen maps 1:1 onto the tablet surface.
-/// Match on the profile's native panel resolution; fall back to the main display.
+/// Matched by EDID, then native panel size (see DisplayLocator); falls back to the main display.
 func cintiqDisplayBounds(_ profile: DeviceProfile) -> CGRect {
-    guard let panel = profile.panelSize else { return CGDisplayBounds(CGMainDisplayID()) }
-    var count: UInt32 = 0
-    CGGetActiveDisplayList(0, nil, &count)
-    var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
-    CGGetActiveDisplayList(count, &ids, &count)
-    for id in ids {
-        // Match on native pixel resolution; the panel may run HiDPI, so CGDisplayBounds
-        // returns the point-space rect used for cursor mapping.
-        guard let mode = CGDisplayCopyDisplayMode(id) else { continue }
-        if mode.pixelWidth == Int(panel.width) && mode.pixelHeight == Int(panel.height) {
-            let b = CGDisplayBounds(id)
-            FileHandle.standardError.write("nib: mapping to tablet display id=\(id) bounds=\(b)\n".data(using: .utf8)!)
-            return b
-        }
+    if let id = DisplayLocator.tabletDisplayID(for: profile) {
+        let b = CGDisplayBounds(id)
+        FileHandle.standardError.write("nib: mapping to tablet display id=\(id) bounds=\(b)\n".data(using: .utf8)!)
+        return b
     }
     FileHandle.standardError.write("nib: tablet display not found, using main display\n".data(using: .utf8)!)
     return CGDisplayBounds(CGMainDisplayID())
@@ -215,7 +205,7 @@ case "run":
 
     // In-app calibration: captures raw pen coords at two on-screen targets, then applies
     // them against the currently-active device's display bounds.
-    let calibration = CalibrationController(apply: { cal in
+    let calibration = CalibrationController(profile: { activeProfile }, apply: { cal in
         let m = DisplayMapping(targetBounds: cintiqDisplayBounds(activeProfile),
                                xMin: cal.xMin, xMax: cal.xMax, yMin: cal.yMin, yMax: cal.yMax)
         emitter.setMapping(m)
