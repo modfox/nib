@@ -263,11 +263,19 @@ case "run":
 
 case "capture":
     // Raw multi-interface HID dump for bringing up a NEW device. Opens every connected
-    // interface of each known vendor, sends the best-guess Wacom enable sequences, and
-    // dumps every report as raw hex tagged by PID. Run this, then perform the labeled
-    // gestures from docs/ADDING-A-DEVICE.md (corners, hard press, lift, 1/2/3-finger
-    // touches) to produce a capture bundle for a new DeviceProfile + fixtures.
+    // interface of each known vendor and dumps every report as raw hex tagged by PID; with
+    // --send-enable it first sends the best-guess (DTH2420) Wacom enable sequences. Run
+    // this, then perform the labeled gestures from docs/ADDING-A-DEVICE.md (corners, hard
+    // press, lift, 1/2/3-finger touches) to produce a capture bundle for a new
+    // DeviceProfile + fixtures.
+    // Passive by default: the DTH2420's vendor reports may mean something else on another
+    // model, so they are only sent when the contributor opts in with --send-enable.
+    let sendEnable = args.dropFirst(2).contains("--send-enable")
     FileHandle.standardError.write("nib: CAPTURE mode — raw report dump for a new device (Ctrl-C to stop)\n".data(using: .utf8)!)
+    FileHandle.standardError.write((sendEnable
+        ? "nib: --send-enable: sending the DTH2420 mode-switch + touch-enable to every interface\n"
+        : "nib: passive capture (nothing is sent to the tablet; add --send-enable if the pen shows no reports)\n")
+        .data(using: .utf8)!)
     let guess = DeviceProfile.dth2420   // best-guess enable sequences for the Wacom family
     var ifaces: [(vendor: UInt16, pid: UInt16)] = []
     for v in Set(DeviceProfile.all.map({ $0.vendorID })) {
@@ -288,6 +296,10 @@ case "capture":
         t = HIDTransport(
             vendorID: iface.vendor, productID: iface.pid,
             onAttach: {
+                guard sendEnable else {
+                    FileHandle.standardError.write(String(format: "nib: opened 0x%04x (passive)\n", iface.pid).data(using: .utf8)!)
+                    return
+                }
                 FileHandle.standardError.write(String(format: "nib: opened 0x%04x; sending best-guess enable\n", iface.pid).data(using: .utf8)!)
                 _ = t.applyFeatures(guess.initSequence)   // best effort; failures are expected on non-pen interfaces
                 _ = t.applyOutputs(guess.touchEnable)      // best effort; failures are expected on non-touch interfaces
@@ -304,6 +316,6 @@ case "capture":
     CFRunLoopRun()
 
 default:
-    FileHandle.standardError.write("usage: nib [run|log|touchlog|calibrate|capture]\n".data(using: .utf8)!)
+    FileHandle.standardError.write("usage: nib [run|log|touchlog|calibrate|capture [--send-enable]]\n".data(using: .utf8)!)
     exit(2)
 }
